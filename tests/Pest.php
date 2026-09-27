@@ -1,8 +1,11 @@
 <?php
 
 use App\Enums\Role;
+use App\Models\AcademicSession;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
+use App\Models\School;
+use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -101,6 +104,68 @@ function grantPermission(User $user, string $name): void
     );
 
     $user->unsetRelation('directPermissions')->unsetRelation('role');
+}
+
+/**
+ * Log in and return the test case with the bearer header already attached, so a test reads
+ * as one call per request:
+ *
+ *     asUser($admin)->getJson('/api/v1/academic-sessions')->assertOk();
+ *
+ * Two pieces of per-test state are cleared first, so that a test which acts as more than
+ * one user is testing what it appears to test. A test process reuses one application
+ * instance, and both of these survive from one request to the next:
+ *
+ *   - the test case's default headers, which still carry the previous user's bearer token;
+ *   - the user the auth manager already resolved for the guard.
+ *
+ * Without clearing them, the login request below would be sent *with* the previous token
+ * and the guard would resolve that user again. The next request, carrying the new token,
+ * would then still be authorized as the old one, and any assertion about the new user's
+ * rights would quietly be an assertion about the previous user's.
+ *
+ * @return TestCase
+ */
+function asUser(User $user, string $password = 'password')
+{
+    forgetResolvedUser();
+    test()->withHeader('Authorization', '');
+
+    $token = loginAs($user, $password);
+
+    // The login request resolved nothing (it carried no token), but a guard may still hold
+    // a user from earlier in the test, so clear it once more before the first real request.
+    forgetResolvedUser();
+
+    return test()->withHeader('Authorization', 'Bearer '.$token);
+}
+
+/**
+ * A school that is fully configured: a profile, a current session and the term inside it
+ * that contains today.
+ *
+ * Returning the models rather than just a truthy value lets a test assert against the
+ * current session and term by identity, which is what nearly every academic assertion
+ * actually needs.
+ *
+ * @return array{0: School, 1: AcademicSession, 2: Term}
+ */
+function configuredSchool(?string $sessionName = null): array
+{
+    $school = School::factory()->active()->create();
+
+    $session = AcademicSession::factory()->active()->create(array_filter([
+        'name' => $sessionName,
+    ]));
+
+    $term = Term::factory()->active()->create([
+        'academic_session_id' => $session->getKey(),
+        'term_number' => 1,
+        'start_date' => $session->start_date,
+        'end_date' => $session->end_date,
+    ]);
+
+    return [$school, $session, $term];
 }
 
 /**

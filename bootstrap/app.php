@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\BusinessRuleViolation;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Middleware\EnsureUserHasPermission;
@@ -79,6 +80,20 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => $e->getMessage(),
                     'errors' => $e->errors(),
                 ], $e->status);
+            }
+        });
+
+        /*
+         * A business rule rejected a well formed, permitted request: activating a second
+         * term, deleting the current session, removing a class level that still has
+         * classes. It shares the 422 status with a validation failure because the remedy is
+         * the same from a client's point of view, but it is rendered before the catch-all
+         * below so the message names the actual obstacle instead of being flattened to
+         * "Server error."
+         */
+        $exceptions->render(function (BusinessRuleViolation $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiResponse::error($e->getMessage(), 422, $e->errors());
             }
         });
 
