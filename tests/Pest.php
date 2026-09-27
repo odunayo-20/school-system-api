@@ -1,10 +1,12 @@
 <?php
 
 use App\Enums\Role;
+use App\Enums\StaffType;
 use App\Models\AcademicSession;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
+use App\Models\Staff;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -141,6 +143,25 @@ function asUser(User $user, string $password = 'password')
 }
 
 /**
+ * Attach a token that has already been issued, so a test making many requests as one user
+ * logs in once.
+ *
+ * asUser() is not free: it posts to the real login endpoint, and that route carries
+ * throttle:login at five attempts a minute per email address. A test that loops over five
+ * query strings calling asUser() each time therefore gets a 429 on the sixth, which has
+ * nothing to do with the filters it is checking. Issuing the token once and reusing it
+ * keeps the limiter out of the way without weakening it.
+ *
+ * @return TestCase
+ */
+function withToken(string $token)
+{
+    forgetResolvedUser();
+
+    return test()->withHeader('Authorization', 'Bearer '.$token);
+}
+
+/**
  * A school that is fully configured: a profile, a current session and the term inside it
  * that contains today.
  *
@@ -176,4 +197,53 @@ function configuredSchool(?string $sessionName = null): array
 function forgetResolvedUser(): void
 {
     app('auth')->forgetGuards();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Staff module helpers (Module 03)
+|--------------------------------------------------------------------------
+|
+| A valid create payload, so each test states only the field it is actually about. The
+| password satisfies the shared PasswordRule: eight characters with upper case, lower
+| case, a number and a symbol.
+|
+*/
+
+function staffCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Amina Yusuf',
+        'email' => 'amina@example.test',
+        'password' => 'Str0ng!Passw0rd',
+        'password_confirmation' => 'Str0ng!Passw0rd',
+        'staff_type' => 'TEACHING',
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and staff_type are always
+ * present unless a test is deliberately omitting one.
+ */
+function staffUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Amina Yusuf',
+        'staff_type' => 'TEACHING',
+    ], $overrides);
+}
+
+/**
+ * A staff record with a linked STAFF user, built through the factory rather than the API
+ * so a test about the API is not also testing account creation.
+ */
+function staffMember(?StaffType $staffType = null, array $staffAttributes = []): Staff
+{
+    $staff = Staff::factory()->create(array_filter([
+        'staff_type' => $staffType,
+    ], fn (mixed $value): bool => ! is_null($value)));
+
+    $staff->forceFill($staffAttributes)->save();
+
+    return $staff->refresh();
 }

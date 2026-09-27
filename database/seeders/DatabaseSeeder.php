@@ -30,11 +30,19 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RoleSeeder::class,
+            // The order of the three permission seeders is load-bearing. Module 01's
+            // PermissionSeeder grants with sync(), which REPLACES each role's permission
+            // set, so any later seeder that used sync() would revoke it. The two module
+            // seeders that follow grant with syncWithoutDetaching() and therefore add to
+            // whatever is already there. Reversing the order would leave the tables looking
+            // correct while every Module 02 and Module 03 route answered 403.
             PermissionSeeder::class,
             AcademicPermissionSeeder::class,
+            StaffPermissionSeeder::class,
             SchoolSeeder::class,
             AcademicStructureSeeder::class,
             AcademicCalendarSeeder::class,
+            StaffSeeder::class,
             SuperAdminSeeder::class,
         ]);
     }

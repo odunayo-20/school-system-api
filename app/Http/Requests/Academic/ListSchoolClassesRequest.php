@@ -3,12 +3,13 @@
 namespace App\Http\Requests\Academic;
 
 use App\Enums\CatalogStatus;
+use App\Http\Requests\ListRequest;
 use Illuminate\Validation\Rule;
 
 /**
  * Filters for the class list.
  */
-class ListSchoolClassesRequest extends AcademicListRequest
+class ListSchoolClassesRequest extends ListRequest
 {
     /**
      * @return array<string, mixed>

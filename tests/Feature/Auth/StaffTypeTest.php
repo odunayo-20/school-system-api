@@ -111,3 +111,43 @@ test('the factory produces both staff variants', function () {
     expect(User::factory()->teachingStaff()->create()->fresh()->staffType())->toBe(StaffType::TEACHING)
         ->and(User::factory()->nonTeachingStaff()->create()->fresh()->staffType())->toBe(StaffType::NON_TEACHING);
 });
+
+test('a staff member created through the API carries the same single STAFF role', function () {
+    // Module 03 creates staff records and their login account together. This asserts the
+    // classification model survived that: the record lands under the one STAFF role, the
+    // two staff types are still a staff_type value rather than a role, and neither
+    // authenticate differently. Without this, a staff.create payload that tried to name a
+    // role would be the only place the two ideas could drift apart.
+    $admin = asUser(userWithRole(Role::ADMIN));
+
+    $teaching = $admin->postJson('/api/v1/staff', staffCreatePayload([
+        'email' => 'api-teaching@example.test',
+        'staff_type' => 'TEACHING',
+    ]))->assertStatus(201);
+
+    $nonTeaching = $admin->postJson('/api/v1/staff', staffCreatePayload([
+        'email' => 'api-nonteaching@example.test',
+        'staff_type' => 'NON_TEACHING',
+    ]))->assertStatus(201);
+
+    $teachingUser = User::query()->where('email', 'api-teaching@example.test')->firstOrFail();
+    $nonTeachingUser = User::query()->where('email', 'api-nonteaching@example.test')->firstOrFail();
+
+    expect($teachingUser->roleEnum())->toBe(Role::STAFF)
+        ->and($nonTeachingUser->roleEnum())->toBe(Role::STAFF)
+        ->and($teachingUser->staffType())->toBe(StaffType::TEACHING)
+        ->and($nonTeachingUser->staffType())->toBe(StaffType::NON_TEACHING)
+        ->and(Role::values())->toBe(['SUPER_ADMIN', 'ADMIN', 'REGISTRAR', 'STAFF', 'STUDENT'])
+        ->and($teaching->json('data.staff_type'))->toBe(StaffType::TEACHING->value);
+
+    // Both still authenticate through the one login endpoint, as before.
+    $this->postJson('/api/v1/auth/login', ['email' => $teachingUser->email, 'password' => 'Str0ng!Passw0rd'])
+        ->assertOk()
+        ->assertJsonPath('data.user.role', Role::STAFF->value)
+        ->assertJsonPath('data.user.staff_type', StaffType::TEACHING->value);
+
+    $this->postJson('/api/v1/auth/login', ['email' => $nonTeachingUser->email, 'password' => 'Str0ng!Passw0rd'])
+        ->assertOk()
+        ->assertJsonPath('data.user.role', Role::STAFF->value)
+        ->assertJsonPath('data.user.staff_type', StaffType::NON_TEACHING->value);
+});

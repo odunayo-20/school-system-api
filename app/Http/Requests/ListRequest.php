@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Http\Requests\Academic;
+namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * The shape shared by every list endpoint in the module.
+ * The shape shared by every list endpoint in the API.
  *
  * Filters used to be read with $request->only([...]) and handed straight to a service, which
  * was fast to write and wrong in three ways that a client could reach:
@@ -23,11 +23,17 @@ use Illuminate\Validation\Rule;
  * against their enum here too, so a typo reports the permitted values rather than quietly
  * returning an empty page that looks like a school with no data.
  *
- * Per the module's design decision there is no `sort` parameter: each endpoint has one
- * sensible order, chosen in the service, and offering a caller-chosen column would be an
- * injection surface for no benefit at this size. See the Module 02 final audit, D.11.
+ * This class was Module 02's `Http\Requests\Academic\AcademicListRequest` and was moved out
+ * of the Academic namespace when Module 03 needed the same paging and search rules for the
+ * staff list. Nothing else about it changed: same rules, same messages, same MAX_PER_PAGE.
+ * A base class named for one module governing another module's paging is a wrong abstraction
+ * that costs more later than a rename costs now.
+ *
+ * Per the design decision there is no `sort` parameter: each endpoint has one sensible
+ * order, chosen in the service, and offering a caller-chosen column would be an injection
+ * surface for no benefit at this size. See the Module 02 final audit, D.11.
  */
-abstract class AcademicListRequest extends FormRequest
+abstract class ListRequest extends FormRequest
 {
     /**
      * The largest page a client may ask for. Comfortably above any screen a registrar will
@@ -101,8 +107,9 @@ abstract class AcademicListRequest extends FormRequest
      * The validated filters in the shape the services read.
      *
      * Only keys the caller actually sent are present, because every service treats a missing
-     * key as "no filter". active_only is cast to a real bool here rather than passed through
-     * as the string "false", which is what made the truthiness check in the services wrong.
+     * key as "no filter". The boolean flags named here are cast to real bools rather than
+     * passed through as the string "false", which is what made the truthiness checks in the
+     * services wrong: "false" is a non-empty string and therefore truthy.
      *
      * @return array<string, mixed>
      */
@@ -116,12 +123,24 @@ abstract class AcademicListRequest extends FormRequest
 
         $filters['per_page'] = $this->perPage();
 
-        if (array_key_exists('active_only', $filters)) {
-            $filters['active_only'] = $this->boolean('active_only');
+        foreach (self::BOOLEAN_FILTERS as $flag) {
+            if (array_key_exists($flag, $filters)) {
+                $filters[$flag] = $this->boolean($flag);
+            }
         }
 
         return $filters;
     }
+
+    /**
+     * The filters that filters() casts to a real bool.
+     *
+     * A subclass that adds its own query-string boolean overrides this rather than editing
+     * filters(), so the cast cannot be forgotten by a request added later.
+     *
+     * @var list<string>
+     */
+    protected const BOOLEAN_FILTERS = ['active_only', 'has_account'];
 
     public function perPage(): int
     {

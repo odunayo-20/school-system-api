@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
@@ -101,6 +102,33 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->is('api/*')) {
                 return ApiResponse::tooManyRequests($e->getMessage() ?: 'Too many requests.');
             }
+        });
+
+        /*
+         * A 405 has to name the methods that WOULD work, and RFC 9110 requires that list in
+         * an Allow header, not only in the body. The catch-all below builds a fresh JSON
+         * response and so drops whatever headers the exception carried, which loses Allow:
+         * a client that sent PATCH to a PUT-only endpoint got a sentence in the message but
+         * a response a generic HTTP client could not act on.
+         *
+         * This is additive. It applies to MethodNotAllowedHttpException only, changes no
+         * body, and no route in Modules 01 to 03 relies on the missing header.
+         */
+        $exceptions->render(function (MethodNotAllowedHttpException $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $response = ApiResponse::error(
+                $e->getMessage() ?: 'Request failed.',
+                405,
+            );
+
+            if ($e->getHeaders() !== []) {
+                $response->headers->add($e->getHeaders());
+            }
+
+            return $response;
         });
 
         $exceptions->render(function (ModelNotFoundException|NotFoundHttpException $e, Request $request) {

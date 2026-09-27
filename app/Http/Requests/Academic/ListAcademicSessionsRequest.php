@@ -3,12 +3,13 @@
 namespace App\Http\Requests\Academic;
 
 use App\Enums\AcademicSessionStatus;
+use App\Http\Requests\ListRequest;
 use Illuminate\Validation\Rule;
 
 /**
  * Filters for the academic session list.
  */
-class ListAcademicSessionsRequest extends AcademicListRequest
+class ListAcademicSessionsRequest extends ListRequest
 {
     /**
      * @return array<string, mixed>

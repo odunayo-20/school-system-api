@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
+use App\Http\Controllers\Api\V1\Staff\StaffController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -243,4 +244,60 @@ Route::middleware(['auth:api', 'active'])->group(function (): void {
     Route::delete('sections/{section}', [SectionController::class, 'destroy'])
         ->middleware('permission:sections.delete')
         ->name('sections.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Staff management routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 03. Same shape as Module 02: a Sanctum bearer token, an active account, and one
+| permission per route. The permissions are seeded by StaffPermissionSeeder and need no
+| code change to take effect.
+|
+| Three deliberate differences from the academic routes above:
+|
+|  - NO delete endpoint. A staff record is kept; employment ends by being deactivated or
+|    terminated, and the history stays. There is therefore no staff.delete permission either,
+|    because a permission for an operation that cannot be performed has no meaning. When
+|    subjects, attendance and results arrive, their own restrictOnDelete keys become the
+|    real guard - and by then a guard that can actually fail is one worth having.
+|
+|  - PUT alone, not Route::match(['put','patch']). The amend is a whole-record write, and
+|    one verb is one fewer thing for a client to try and mis-use. A PATCH is answered with
+|    405 and an Allow header naming the supported methods, which is a clearer answer than
+|    silently behaving like a partial write. This is a conscious divergence from the
+|    academic routes; change it to Route::match here if consistency is preferred.
+|
+|  - activate and deactivate are POSTs, for Module 02's reason: an employment transition is
+|    an action, not a field, and it is separated so the ability to end someone's employment
+|    can be granted without the ability to edit a staff record. Registrar holds
+|    staff.update but deliberately not staff.deactivate - see StaffPermissionSeeder.
+|
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('staff')->name('staff.')->group(function (): void {
+    Route::get('/', [StaffController::class, 'index'])
+        ->middleware('permission:staff.view')
+        ->name('index');
+
+    Route::post('/', [StaffController::class, 'store'])
+        ->middleware('permission:staff.create')
+        ->name('store');
+
+    Route::get('{staff}', [StaffController::class, 'show'])
+        ->middleware('permission:staff.view')
+        ->name('show');
+
+    Route::put('{staff}', [StaffController::class, 'update'])
+        ->middleware('permission:staff.update')
+        ->name('update');
+
+    Route::post('{staff}/activate', [StaffController::class, 'activate'])
+        ->middleware('permission:staff.activate')
+        ->name('activate');
+
+    Route::post('{staff}/deactivate', [StaffController::class, 'deactivate'])
+        ->middleware('permission:staff.deactivate')
+        ->name('deactivate');
 });
