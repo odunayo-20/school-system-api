@@ -9,6 +9,8 @@ use App\Services\Auth\AuthenticationService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Laravel\Sanctum\NewAccessToken;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -27,7 +29,7 @@ class AuthenticatedSessionController extends Controller
             'user' => new UserResource($user),
             'token' => $token->plainTextToken,
             'token_type' => 'Bearer',
-            'expires_at' => $token->accessToken->expires_at?->toIso8601String(),
+            'expires_at' => $this->expiryFor($token),
         ], 'Authenticated successfully.');
     }
 
@@ -47,5 +49,28 @@ class AuthenticatedSessionController extends Controller
     public function me(Request $request): JsonResponse
     {
         return ApiResponse::success(new UserResource($request->user()));
+    }
+
+    /**
+     * When the issued token stops being accepted.
+     *
+     * Sanctum enforces the lifetime from config("sanctum.expiration") while validating
+     * a token, and does not copy it onto the personal_access_tokens row, so the row
+     * column would always be null. Report the lifetime that is actually enforced, and
+     * store it on the row as well so it can be audited later.
+     */
+    protected function expiryFor(NewAccessToken $token): ?string
+    {
+        $minutes = config('sanctum.expiration');
+
+        if (! $minutes) {
+            return null;
+        }
+
+        $expiresAt = Carbon::now()->addMinutes((int) $minutes);
+
+        $token->accessToken->forceFill(['expires_at' => $expiresAt])->save();
+
+        return $expiresAt->toIso8601String();
     }
 }

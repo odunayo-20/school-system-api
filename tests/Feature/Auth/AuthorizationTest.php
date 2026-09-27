@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Role;
+use App\Enums\UserStatus;
 use App\Models\Permission;
 use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Sanctum;
@@ -130,7 +131,7 @@ test('a role middleware accepts any of the listed roles', function () {
 });
 
 test('an inactive account is forbidden on an otherwise permitted route', function () {
-    Sanctum::actingAs(userWithRole(Role::ADMIN, ['status' => \App\Enums\UserStatus::INACTIVE]), ['*'], 'api');
+    Sanctum::actingAs(userWithRole(Role::ADMIN, ['status' => UserStatus::INACTIVE]), ['*'], 'api');
 
     $this->getJson('/_test/admin-only')
         ->assertForbidden()

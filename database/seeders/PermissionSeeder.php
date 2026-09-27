@@ -11,7 +11,7 @@ use Illuminate\Database\Seeder;
  * Module 01 seeds only the permissions that belong to the account and role domain.
  * Business permissions (students.*, admissions.*, results.*, ...) are deliberately
  * left to the module that owns them, and will be picked up by the Gate automatically
- * the moment they are seeded — no code change required.
+ * the moment they are seeded - no code change required.
  */
 class PermissionSeeder extends Seeder
 {

@@ -20,7 +20,6 @@ class EnsureUserHasPermission
 {
     /**
      * @param  Closure(Request): Response  $next
-     * @param  string  ...$permissions
      */
     public function handle(Request $request, Closure $next, string ...$permissions): Response
     {

@@ -3,6 +3,7 @@
 use App\Enums\Role;
 use App\Enums\UserStatus;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 
 test('a user can log in with valid credentials and receives a token', function () {
@@ -148,4 +149,55 @@ test('passwords are stored hashed, never in plaintext', function () {
 
     expect($user->getAuthPassword())->not->toBe('password')
         ->and(password_verify('password', $user->getAuthPassword()))->toBeTrue();
+});
+
+test('the issued token reports the expiry that Sanctum actually enforces', function () {
+    config(['sanctum.expiration' => 60]);
+
+    $user = userWithRole(Role::ADMIN);
+
+    $response = $this->postJson('/api/v1/auth/login', [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertOk();
+
+    $expiresAt = Carbon::parse($response->json('data.expires_at'));
+
+    expect($expiresAt->isAfter(now()->addMinutes(59)))->toBeTrue()
+        ->and($expiresAt->isBefore(now()->addMinutes(61)))->toBeTrue();
+
+    expect(User::first()->tokens()->first()->expires_at)->not->toBeNull();
+});
+
+test('an expired token is rejected even though the row still exists', function () {
+    config(['sanctum.expiration' => 60]);
+
+    $user = userWithRole(Role::ADMIN);
+    $token = loginAs($user);
+
+    $user->tokens()->first()->forceFill(['expires_at' => now()->subMinute()])->save();
+
+    forgetResolvedUser();
+
+    $this->withHeader('Authorization', "Bearer {$token}")
+        ->getJson('/api/v1/auth/me')
+        ->assertUnauthorized();
+});
+
+test('unauthenticated api calls answer 401 json even without an accept header', function () {
+    // Regression guard: the "auth" middleware used to redirect a guest to route("login"),
+    // which does not exist in a headless API, so a client that omits
+    // "Accept: application/json" received a 500 instead of a 401.
+    $response = $this->get('/api/v1/auth/me');
+
+    $response->assertUnauthorized();
+    $response->assertHeader('content-type', 'application/json');
+    expect($response->json('message'))->not->toBeNull();
+});
+
+test('a malformed token answers 401 json rather than a server error', function () {
+    $response = $this->get('/api/v1/auth/me', ['Authorization' => 'Bearer garbage']);
+
+    $response->assertUnauthorized();
+    expect($response->json())->toHaveKey('message');
 });

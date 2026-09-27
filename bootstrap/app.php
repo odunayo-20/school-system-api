@@ -1,12 +1,12 @@
 <?php
 
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserHasRole;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -42,6 +42,17 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => EnsureUserHasPermission::class,
             'verified' => EnsureEmailIsVerified::class,
         ]);
+
+        /*
+         * Laravel's "auth" middleware redirects an unauthenticated guest to
+         * route("login") unless the request expects JSON. This application is headless
+         * and defines no "login" route, so without this a plain client that omits
+         * Accept: application/json would receive a 500 RouteNotFoundException instead of
+         * a 401. Returning null always lets the AuthenticationException bubble up to the
+         * JSON handler below. If a browser-based admin panel is ever added, point this at
+         * that panel's own route.
+         */
+        $middleware->redirectGuestsTo(fn (Request $request): ?string => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Every /api/* request is answered with JSON, so a client never has to parse an

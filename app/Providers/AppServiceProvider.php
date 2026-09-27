@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,6 +27,29 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureRateLimiting();
+        $this->configureEmailVerificationUrl();
+    }
+
+    /**
+     * Laravel's VerifyEmail notification builds its link from a hard-coded route name,
+     * "verification.verify". Every route in this application lives under the "auth."
+     * name prefix, so the default would raise a RouteNotFoundException the first time a
+     * real verification mail is sent. Point the notification at the prefixed route,
+     * keeping the standard signed-URL shape and expiry.
+     */
+    protected function configureEmailVerificationUrl(): void
+    {
+        VerifyEmail::createUrlUsing(function (mixed $notifiable): string {
+            /** @var Notifiable $notifiable */
+            return URL::temporarySignedRoute(
+                'auth.verification.verify',
+                Carbon::now()->addMinutes((int) config('auth.verification.expire', 60)),
+                [
+                    'id' => (string) $notifiable->getKey(),
+                    'hash' => sha1($notifiable->getEmailForVerification()),
+                ]
+            );
+        });
     }
 
     /**

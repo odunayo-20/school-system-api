@@ -36,15 +36,21 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->name('password.store');
 
     /*
-     * Email verification. The link sent by Laravel's built-in notification points at
-     * the signed route below, so the client never has to build the URL itself.
+     * Email verification link.
+     *
+     * The link is opened in a browser straight from the mailbox, so it cannot carry a
+     * bearer token. Authenticity therefore comes from the signed URL plus the SHA-1 hash
+     * of the address, exactly as Laravel's own verification route does: no "auth:api"
+     * middleware here, and no session either. The "signed" middleware rejects a tampered
+     * or expired link, and VerifyEmailController rejects a hash that does not belong to
+     * the user id in the URL.
      *
      * Unverified accounts are NOT blocked from logging in: administrators provision
      * accounts by email, so requiring verification would lock out the very first Super
      * Admin. Sensitive endpoints opt in with the "verified" middleware instead.
      */
     Route::get('email/verify/{id}/{hash}', VerifyEmailController::class)
-        ->middleware(['signed', 'auth:api', 'active'])
+        ->middleware('signed')
         ->name('verification.verify');
 
     Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])

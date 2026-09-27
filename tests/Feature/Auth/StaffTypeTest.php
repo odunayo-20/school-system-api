@@ -6,7 +6,6 @@ use App\Models\Staff;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Schema;
-use Laravel\Sanctum\Sanctum;
 
 /*
  * Teaching and non-teaching staff are a CLASSIFICATION of STAFF, not separate

@@ -2,6 +2,8 @@
 
 use App\Enums\Role;
 use App\Enums\StaffType;
+use App\Enums\UserStatus;
+use App\Models\Staff;
 
 test('the current user endpoint requires authentication', function () {
     $this->getJson('/api/v1/auth/me')
@@ -17,7 +19,7 @@ test('the current user endpoint rejects an invalid token', function () {
 
 test('the current user endpoint returns the profile and authorization context', function () {
     $user = userWithRole(Role::STAFF);
-    \App\Models\Staff::factory()->create([
+    Staff::factory()->create([
         'user_id' => $user->id,
         'staff_type' => StaffType::TEACHING,
     ]);
@@ -73,7 +75,7 @@ test('a suspended user loses access immediately, not only at the next login', fu
         ->getJson('/api/v1/auth/me')
         ->assertOk();
 
-    $user->forceFill(['status' => \App\Enums\UserStatus::SUSPENDED])->save();
+    $user->forceFill(['status' => UserStatus::SUSPENDED])->save();
 
     forgetResolvedUser();
 

@@ -11,9 +11,6 @@ use Illuminate\Validation\Rules\Password as BasePassword;
  */
 final class PasswordRule
 {
-    /**
-     * @return BasePassword
-     */
     public static function make(): BasePassword
     {
         return BasePassword::min(8)

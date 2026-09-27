@@ -54,8 +54,42 @@ class SuperAdminSeeder extends Seeder
 
         $user->save();
 
-        $this->command?->info($plainPassword === null
-            ? "Development super admin ready: {$email}"
-            : "Development super admin created: {$email} (password: {$plainPassword})");
+        if ($plainPassword === null) {
+            $this->command?->info("Development super admin ready: {$email} (password unchanged)");
+
+            return;
+        }
+
+        $this->command?->info("Development super admin created: {$email}");
+
+        /*
+         * Never write a password to a log. A seed run inside a deployment pipeline or a
+         * CI job captures stdout into build logs that are widely readable, so the
+         * credential is echoed only when a human is watching an interactive terminal.
+         * Everywhere else the developer sets SUPER_ADMIN_PASSWORD in .env instead.
+         */
+        if (! $this->stdinIsInteractive()) {
+            $this->command?->comment(
+                'A password was generated but is not printed here, because this is not an '
+                .'interactive terminal. Set SUPER_ADMIN_PASSWORD in .env and re-run the seeder.'
+            );
+
+            return;
+        }
+
+        $this->command?->warn("Password for {$email}: {$plainPassword}");
+    }
+
+    /**
+     * True only when standard output is a terminal rather than a pipe or a file, which
+     * is how a local `php artisan db:seed` differs from CI.
+     */
+    protected function stdinIsInteractive(): bool
+    {
+        if (! function_exists('posix_isatty')) {
+            return false;
+        }
+
+        return @posix_isatty(STDOUT);
     }
 }

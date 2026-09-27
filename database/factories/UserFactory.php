@@ -73,7 +73,7 @@ class UserFactory extends Factory
             'role_id' => RoleModel::query()->firstOrCreate(
                 ['name' => $role->value],
                 ['label' => Str::headline($role->value),
-                'description' => null],
+                    'description' => null],
             )->getKey(),
         ]);
     }

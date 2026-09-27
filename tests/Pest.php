@@ -4,8 +4,10 @@ use App\Enums\Role;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use Tests\TestCase;
 
 /*
 |--------------------------------------------------------------------------
@@ -18,8 +20,8 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-pest()->extend(Tests\TestCase::class)
-    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
     ->in('Feature');
 
 /*

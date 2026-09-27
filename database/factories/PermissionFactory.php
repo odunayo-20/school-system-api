@@ -19,7 +19,7 @@ class PermissionFactory extends Factory
         $group = 'users';
 
         return [
-            'name' => "{$group}."..Str::random(8),
+            'name' => "{$group}.".Str::random(8),
             'label' => Str::headline(Str::random(8)),
             'description' => null,
         ];

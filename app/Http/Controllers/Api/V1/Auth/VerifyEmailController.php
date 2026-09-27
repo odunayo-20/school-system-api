@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
@@ -11,28 +12,37 @@ use Illuminate\Http\Request;
 class VerifyEmailController extends Controller
 {
     /**
-     * Mark the authenticated user's email address as verified.
+     * Mark the email address identified by the signed link as verified.
      *
-     * The route is signed and carries an expiry, which is Laravel's standard signed URL
-     * scheme. An invalid, expired or already used link is answered with 403 rather
-     * than revealing anything about the account.
+     * The link is opened in a browser, not by the API client, so it carries no bearer
+     * token. Trust comes from two independent checks performed by the framework and
+     * this method: the "signed" middleware rejects a tampered or expired URL, and the
+     * SHA-1 hash below must belong to the user id in the same URL.
+     *
+     * A mismatch is reported as 403 with a deliberately vague message, so the endpoint
+     * cannot be used to probe which accounts exist.
      */
     public function __invoke(Request $request): JsonResponse
     {
-        if ($request->user()->hasVerifiedEmail()) {
+        $id = (string) $request->route('id');
+        $hash = (string) $request->route('hash');
+
+        if (! ctype_digit($id)) {
+            return ApiResponse::forbidden('Invalid verification link.');
+        }
+
+        $user = User::query()->find((int) $id);
+
+        if (! $user || ! hash_equals(sha1($user->getEmailForVerification()), $hash)) {
+            return ApiResponse::forbidden('Invalid verification link.');
+        }
+
+        if ($user->hasVerifiedEmail()) {
             return ApiResponse::error('Email address is already verified.', 422);
         }
 
-        if (! hash_equals((string) $request->user()->getKey(), (string) $request->route('id'))) {
-            return ApiResponse::forbidden('Invalid verification link.');
-        }
-
-        if (! hash_equals(sha1($request->user()->getEmailForVerification()), (string) $request->route('hash'))) {
-            return ApiResponse::forbidden('Invalid verification link.');
-        }
-
-        if ($request->user()->markEmailAsVerified()) {
-            event(new Verified($request->user()));
+        if ($user->markEmailAsVerified()) {
+            event(new Verified($user));
         }
 
         return ApiResponse::success(null, 'Email address verified.');
