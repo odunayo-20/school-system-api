@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Academic\SchoolClassController;
 use App\Http\Controllers\Api\V1\Academic\SchoolController;
 use App\Http\Controllers\Api\V1\Academic\SectionController;
 use App\Http\Controllers\Api\V1\Academic\TermController;
+use App\Http\Controllers\Api\V1\Admission\AdmissionController;
 use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
@@ -362,4 +363,57 @@ Route::middleware(['auth:api', 'active'])->prefix('students')->name('students.')
     Route::put('{student}', [StudentController::class, 'update'])
         ->middleware('permission:students.update')
         ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admission management routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 05. An admission is the school's decision record for one applicant, targeting one
+| academic session - not a pupil, and not an enrollment. See the admissions migration and
+| AdmissionService for the full reasoning.
+|
+| The permissions are seeded by AdmissionPermissionSeeder and need no code change to take
+| effect.
+|
+| NO delete endpoint and no admissions.delete permission, for the same reason Module 03 and
+| Module 04 have none: an admission is a historical business record of a decision, not
+| something the school erases because it is old.
+|
+| Three dedicated workflow endpoints - admit, reject, withdraw - rather than reaching the
+| status through PUT. Each is a state transition with a side effect beyond the record it
+| names (admit's is a created Student), so each is separated exactly as Module 03 separated
+| staff.activate/staff.deactivate from the ordinary amend, and each is gated on its own
+| permission so it can be granted independently of admissions.update.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('admissions')->name('admissions.')->group(function (): void {
+    Route::get('/', [AdmissionController::class, 'index'])
+        ->middleware('permission:admissions.view')
+        ->name('index');
+
+    Route::post('/', [AdmissionController::class, 'store'])
+        ->middleware('permission:admissions.create')
+        ->name('store');
+
+    Route::get('{admission}', [AdmissionController::class, 'show'])
+        ->middleware('permission:admissions.view')
+        ->name('show');
+
+    Route::put('{admission}', [AdmissionController::class, 'update'])
+        ->middleware('permission:admissions.update')
+        ->name('update');
+
+    Route::post('{admission}/admit', [AdmissionController::class, 'admit'])
+        ->middleware('permission:admissions.admit')
+        ->name('admit');
+
+    Route::post('{admission}/reject', [AdmissionController::class, 'reject'])
+        ->middleware('permission:admissions.reject')
+        ->name('reject');
+
+    Route::post('{admission}/withdraw', [AdmissionController::class, 'withdraw'])
+        ->middleware('permission:admissions.withdraw')
+        ->name('withdraw');
 });

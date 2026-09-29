@@ -1,9 +1,12 @@
 <?php
 
+use App\Enums\AdmissionStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
 use App\Enums\UserStatus;
 use App\Models\AcademicSession;
+use App\Models\Admission;
+use App\Models\ClassLevel;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
@@ -318,4 +321,87 @@ function pupilWithAccount(?UserStatus $accountStatus = null): Student
     }
 
     return $student->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Admission module helpers (Module 05)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries an academic_session_id, because unlike the pupil
+| roll an admission is meaningless without the intake it targets. A caller that does not
+| care which session is used gets a fresh UPCOMING one created for it, mirroring the way
+| configuredSchool() hands tests a ready-made academic context rather than making every test
+| construct one by hand.
+|
+*/
+
+function admissionCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+        'academic_session_id' => AcademicSession::factory()->create()->id,
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so first_name and academic_session_id
+ * are always present unless a test is deliberately omitting one.
+ */
+function admissionUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+        'academic_session_id' => AcademicSession::factory()->create()->id,
+    ], $overrides);
+}
+
+/**
+ * A pending admission, built through the factory rather than the API so a test about the API
+ * is not also testing record creation.
+ */
+function pendingAdmission(array $attributes = []): Admission
+{
+    $admission = Admission::factory()->create(array_filter([
+        'academic_session_id' => $attributes['academic_session_id'] ?? null,
+        'entry_class_level_id' => $attributes['entry_class_level_id'] ?? null,
+    ], fn (mixed $value): bool => ! is_null($value)));
+
+    $admission->forceFill(collect($attributes)->except(['academic_session_id', 'entry_class_level_id'])->all())->save();
+
+    return $admission->refresh();
+}
+
+/**
+ * An admission that has already been decided and, for ADMITTED, carries the student it
+ * created - built directly rather than through admit(), so a test about admit() is not
+ * circularly dependent on the very method it is testing.
+ */
+function decidedAdmission(AdmissionStatus $status, array $attributes = []): Admission
+{
+    $admission = pendingAdmission($attributes);
+
+    $admission->forceFill(['status' => $status, 'decided_at' => now()]);
+
+    if ($status === AdmissionStatus::ADMITTED) {
+        $admission->student_id = Student::factory()->create([
+            'first_name' => $admission->first_name,
+            'last_name' => $admission->last_name,
+        ])->id;
+    }
+
+    $admission->save();
+
+    return $admission->refresh();
+}
+
+/**
+ * A class level a test can safely target as an entry level: ACTIVE, matching the rule that
+ * only a selectable class level may be applied for.
+ */
+function selectableClassLevel(): ClassLevel
+{
+    return ClassLevel::factory()->create();
 }
