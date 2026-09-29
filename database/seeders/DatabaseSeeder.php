@@ -51,6 +51,7 @@ class DatabaseSeeder extends Seeder
             TeacherAssignmentPermissionSeeder::class,
             AssessmentPermissionSeeder::class,
             ScorePermissionSeeder::class,
+            GradingPermissionSeeder::class,
             SchoolSeeder::class,
             AcademicStructureSeeder::class,
             AcademicCalendarSeeder::class,

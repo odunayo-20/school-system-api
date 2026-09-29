@@ -14,6 +14,7 @@ use App\Models\AssessmentType;
 use App\Models\ClassLevel;
 use App\Models\ClassSubject;
 use App\Models\Enrollment;
+use App\Models\GradingScale;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
@@ -845,6 +846,64 @@ function teacherAssignedTo(ClassSubject $classSubject, AcademicSession $session)
  *
  * @return list<int>
  */
+/*
+|--------------------------------------------------------------------------
+| Grading module helpers (Module 11)
+|--------------------------------------------------------------------------
+|
+| standardGradingBands() is the one fixture nearly every test needs: five bands covering
+| 0-100 with no gaps or overlaps, exactly the shape a real scale has. Individual tests that
+| care about a specific boundary/overlap/gap build their own `items` array instead of using
+| this helper, the same posture assessmentCreatePayload() takes toward its own defaults.
+|
+*/
+
+/**
+ * @return list<array{grade: string, min_percentage: float, max_percentage: float, grade_point: float, remark: string}>
+ */
+function standardGradingBands(): array
+{
+    return [
+        ['grade' => 'A', 'min_percentage' => 70, 'max_percentage' => 100, 'grade_point' => 5, 'remark' => 'Excellent'],
+        ['grade' => 'B', 'min_percentage' => 60, 'max_percentage' => 69.99, 'grade_point' => 4, 'remark' => 'Very Good'],
+        ['grade' => 'C', 'min_percentage' => 50, 'max_percentage' => 59.99, 'grade_point' => 3, 'remark' => 'Good'],
+        ['grade' => 'D', 'min_percentage' => 40, 'max_percentage' => 49.99, 'grade_point' => 2, 'remark' => 'Fair'],
+        ['grade' => 'F', 'min_percentage' => 0, 'max_percentage' => 39.99, 'grade_point' => 0, 'remark' => 'Fail'],
+    ];
+}
+
+function gradingScaleCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'class_level_id' => ClassLevel::factory()->create()->id,
+        'name' => 'Grading Scale '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+        'items' => standardGradingBands(),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name, code and the full items array
+ * are always present unless a test is deliberately omitting one.
+ */
+function gradingScaleUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Grading Scale '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+        'items' => standardGradingBands(),
+    ], $overrides);
+}
+
+/**
+ * An active grading scale with the standard five bands already attached, built through the
+ * factory rather than the API so a test about the API is not also testing record creation.
+ */
+function configuredGradingScale(array $attributes = []): GradingScale
+{
+    return GradingScale::factory()->configureWithStandardBands()->create($attributes);
+}
+
 function rosterEnrollments(Assessment $assessment, int $count): array
 {
     $class = $assessment->classSubject->schoolClass;

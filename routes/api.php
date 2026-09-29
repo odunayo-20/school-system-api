@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
+use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
@@ -704,4 +705,47 @@ Route::middleware(['auth:api', 'active'])->prefix('scores')->name('scores.')->gr
     Route::put('{score}', [ScoreController::class, 'update'])
         ->middleware('permission:scores.update')
         ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Grading
+|--------------------------------------------------------------------------
+|
+| Module 11. A grading scale is a reusable scheme scoped to one class level ("Junior
+| Secondary Standard"), made up of percentage bands ("70 to 100 -> A, grade point 5,
+| Excellent"). This module interprets a percentage as a grade; it does not compile a
+| subject/term result, calculate a weighted total, or publish anything - see the
+| grading_scales and grading_scale_items migrations.
+|
+| grading_scales.* has NO delete endpoint. A scale is the anchor a future grading/result
+| compilation module will reference to interpret a historical result, the identical posture
+| Module 06 through Module 10 take toward their own anchor records. Retiring one is
+| status: INACTIVE/ARCHIVED through the ordinary update, not a delete.
+|
+| POST /grading-scales/{id}/calculate is a read-only preview - percentage in, grade
+| information out - gated on grading_scales.view rather than a new permission, since it
+| mutates nothing.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('grading-scales')->name('grading-scales.')->group(function (): void {
+    Route::get('/', [GradingScaleController::class, 'index'])
+        ->middleware('permission:grading_scales.view')
+        ->name('index');
+
+    Route::post('/', [GradingScaleController::class, 'store'])
+        ->middleware('permission:grading_scales.create')
+        ->name('store');
+
+    Route::get('{gradingScale}', [GradingScaleController::class, 'show'])
+        ->middleware('permission:grading_scales.view')
+        ->name('show');
+
+    Route::put('{gradingScale}', [GradingScaleController::class, 'update'])
+        ->middleware('permission:grading_scales.update')
+        ->name('update');
+
+    Route::post('{gradingScale}/calculate', [GradingScaleController::class, 'calculate'])
+        ->middleware('permission:grading_scales.view')
+        ->name('calculate');
 });
