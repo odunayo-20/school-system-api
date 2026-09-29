@@ -16,6 +16,7 @@ permissions, and the client-side checklist.
 | 09 | [assessment-configuration.md](assessment-configuration.md) | The assessment type catalogue and the assessments configured against a class subject and term - CA1/CA2/CA3, max score and weight - and why there is no score, grade or result column yet |
 | 10 | [score-management.md](score-management.md) | Recording what a student obtained against a configured assessment, single or bulk, the enrollment (not student) relationship, live max-score validation, and the teacher-assignment scope that restricts every read and write |
 | 11 | [grading.md](grading.md) | Class-level-scoped grading scales and their percentage bands, inclusive boundary rules, overlap/gap handling, and the read-only percentage-to-grade calculation operation |
+| 12 | [result-compilation.md](result-compilation.md) | Compiling raw assessment scores into a subject result for one enrollment, class subject and term - the weighting rules, the missing-scores policy, idempotent recompilation, and why there is no create/update/delete endpoint |
 
 ## Shared across modules
 
@@ -59,6 +60,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 9. **09** - assessment configuration
 10. **10** - score management
 11. **11** - grading
+12. **12** - result compilation
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -101,6 +103,14 @@ Module 11 depends on Module 02 (the class levels a scale is scoped to) only - no
 reference an assessment, an enrollment or a score at all. A future grading/result-compilation
 module is expected to compute a percentage (Module 10 already exposes one) and pass it to this
 module's calculation operation, not the other way around. See [grading.md](grading.md) §0.
+
+Module 12 depends on Module 06 (the enrollment a result is compiled for), Module 09 (the
+assessments a result aggregates, including their live weights), Module 10 (the scores recorded
+against those assessments) and Module 11 (the grading scale a complete result is interpreted
+through) - not on Module 03, 04, 05, 07 or 08 directly, though it reuses Module 08's own
+teacher-assignment scoping technique. It is the first module to require three foreign keys at
+once (`enrollment_id`, `class_subject_id`, `term_id`), none derivable from either of the other
+two. See [result-compilation.md](result-compilation.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,

@@ -16,6 +16,7 @@ use App\Models\ClassSubject;
 use App\Models\Enrollment;
 use App\Models\GradingScale;
 use App\Models\Permission;
+use App\Models\Result;
 use App\Models\Role as RoleModel;
 use App\Models\School;
 use App\Models\SchoolClass;
@@ -27,6 +28,7 @@ use App\Models\Subject;
 use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Result\ResultService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
@@ -920,4 +922,71 @@ function rosterEnrollments(Assessment $assessment, int $count): array
         'section_id' => $section->id,
         'academic_session_id' => $session->id,
     ])->id)->all();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Result compilation module helpers (Module 12)
+|--------------------------------------------------------------------------
+|
+| compile() needs everything matchedScoreContext() already assembles (an assessment and an
+| enrollment agreeing on class and session) PLUS a recorded Score against that assessment for
+| the result to calculate as COMPLETE rather than INCOMPLETE. resultCompilationContext() builds
+| all of it together so a test that wants a genuinely compilable result does not have to wire
+| six models by hand.
+|
+*/
+
+/**
+ * An assessment (with a recorded score) and a matched enrollment - everything compile() needs
+ * to produce a COMPLETE result for a single-assessment class subject. Returns the pieces
+ * rather than a container, matching matchedScoreContext()'s own reasoning.
+ *
+ * @return array{0: Assessment, 1: Enrollment, 2: Score}
+ */
+function resultCompilationContext(array $assessmentAttributes = [], array $enrollmentAttributes = [], float $score = 15): array
+{
+    [$assessment, $enrollment] = matchedScoreContext($assessmentAttributes, $enrollmentAttributes);
+
+    $recordedScore = Score::factory()
+        ->forAssessment($assessment)
+        ->forEnrollment($enrollment)
+        ->create(['score' => $score]);
+
+    return [$assessment, $enrollment, $recordedScore];
+}
+
+/**
+ * A valid compile payload, built from a freshly matched, fully-scored context. A caller
+ * overriding enrollment_id/class_subject_id/term_id is responsible for the consistency of what
+ * it overrides - the same posture scoreCreatePayload() takes for its own foreign keys.
+ */
+function compileResultPayload(array $overrides = []): array
+{
+    [$assessment, $enrollment] = resultCompilationContext();
+
+    return array_merge([
+        'enrollment_id' => $enrollment->id,
+        'class_subject_id' => $assessment->class_subject_id,
+        'term_id' => $assessment->term_id,
+    ], $overrides);
+}
+
+/**
+ * A compiled result, built through the service's own persist path (compile()) rather than the
+ * factory, so its percentage/grade/status genuinely reflect a real assessment+score pair - a
+ * test that wants a freshly compiled row to recompile against uses this instead of assembling
+ * one from ResultFactory by hand.
+ */
+function compiledResult(?User $actor = null): Result
+{
+    [$assessment, $enrollment] = resultCompilationContext();
+
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(ResultService::class)->compile([
+        'enrollment_id' => $enrollment->id,
+        'class_subject_id' => $assessment->class_subject_id,
+        'term_id' => $assessment->term_id,
+    ], $actor);
 }

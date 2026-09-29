@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
+use App\Http\Controllers\Api\V1\Result\ResultController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
@@ -748,4 +749,42 @@ Route::middleware(['auth:api', 'active'])->prefix('grading-scales')->name('gradi
     Route::post('{gradingScale}/calculate', [GradingScaleController::class, 'calculate'])
         ->middleware('permission:grading_scales.view')
         ->name('calculate');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Result compilation
+|--------------------------------------------------------------------------
+|
+| Module 12. The compiled academic outcome for one student's enrollment, in one class
+| subject, for one term - raw Assessment Scores (Module 10) transformed into a percentage,
+| and (once every configured assessment has a score) a grade, grade point and remark through
+| Module 11's grading scale. See the results migration for why this is one table, not a
+| parent Result plus child ResultItem rows.
+|
+| results.* has NO delete endpoint and no plain store()/update() - a result is written only
+| through compile()/bulk, a calculation over authoritative data, never a raw create or amend
+| of client-supplied values. Recompiling (the identical operation, run again after a score
+| correction) is how an existing result changes.
+|
+| POST /results/bulk shares results.compile rather than a separate permission: compiling a
+| whole class subject's results in one call is the same capability as compiling one student's.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('results')->name('results.')->group(function (): void {
+    Route::get('/', [ResultController::class, 'index'])
+        ->middleware('permission:results.view')
+        ->name('index');
+
+    Route::post('compile', [ResultController::class, 'compile'])
+        ->middleware('permission:results.compile')
+        ->name('compile');
+
+    Route::post('bulk', [ResultController::class, 'bulkCompile'])
+        ->middleware('permission:results.compile')
+        ->name('bulk-compile');
+
+    Route::get('{result}', [ResultController::class, 'show'])
+        ->middleware('permission:results.view')
+        ->name('show');
 });
