@@ -6,8 +6,10 @@ use Database\Seeders\AcademicPermissionSeeder;
 use Database\Seeders\AdmissionPermissionSeeder;
 use Database\Seeders\AssessmentPermissionSeeder;
 use Database\Seeders\EnrollmentPermissionSeeder;
+use Database\Seeders\GradingPermissionSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
+use Database\Seeders\ScorePermissionSeeder;
 use Database\Seeders\StaffPermissionSeeder;
 use Database\Seeders\StudentPermissionSeeder;
 use Database\Seeders\SubjectPermissionSeeder;
@@ -21,16 +23,17 @@ abstract class TestCase extends BaseTestCase
      * every module implemented so far, so authorization assertions are made against a
      * known baseline.
      *
-     * All nine permission seeders run, in the same order as DatabaseSeeder, and that
+     * All eleven permission seeders run, in the same order as DatabaseSeeder, and that
      * order is load-bearing. PermissionSeeder grants Module 01's permissions with sync(),
      * which REPLACES each role's permission set; AcademicPermissionSeeder,
      * StaffPermissionSeeder, StudentPermissionSeeder, AdmissionPermissionSeeder,
-     * EnrollmentPermissionSeeder, SubjectPermissionSeeder, TeacherAssignmentPermissionSeeder
-     * and AssessmentPermissionSeeder grant theirs with syncWithoutDetaching(), so running
-     * them afterwards adds to the set rather than replacing it. Seeded in the other order,
-     * the database would look correct and every Module 02 through Module 09 route would
-     * answer 403. That a test of the combined baseline depends on this is the point of
-     * seeding all nine here rather than only the ones the test under way needs.
+     * EnrollmentPermissionSeeder, SubjectPermissionSeeder, TeacherAssignmentPermissionSeeder,
+     * AssessmentPermissionSeeder, ScorePermissionSeeder and GradingPermissionSeeder grant
+     * theirs with syncWithoutDetaching(), so running them afterwards adds to the set rather
+     * than replacing it. Seeded in the other order, the database would look correct and every
+     * Module 02 through Module 11 route would answer 403. That a test of the combined
+     * baseline depends on this is the point of seeding all eleven here rather than only the
+     * ones the test under way needs.
      */
     protected function setUp(): void
     {
@@ -47,6 +50,8 @@ abstract class TestCase extends BaseTestCase
             SubjectPermissionSeeder::class,
             TeacherAssignmentPermissionSeeder::class,
             AssessmentPermissionSeeder::class,
+            ScorePermissionSeeder::class,
+            GradingPermissionSeeder::class,
         ]);
     }
 }

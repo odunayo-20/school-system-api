@@ -14,6 +14,8 @@ permissions, and the client-side checklist.
 | 07 | [subject-management.md](subject-management.md) | The subject catalogue and class-subject offerings - Mathematics vs "JSS 2 teaches Mathematics" - and why neither table has a teacher column |
 | 08 | [teacher-assignment.md](teacher-assignment.md) | Assigning teaching staff to class subjects for a session, the single-active-teacher rule, and reassignment via `end` then `create` |
 | 09 | [assessment-configuration.md](assessment-configuration.md) | The assessment type catalogue and the assessments configured against a class subject and term - CA1/CA2/CA3, max score and weight - and why there is no score, grade or result column yet |
+| 10 | [score-management.md](score-management.md) | Recording what a student obtained against a configured assessment, single or bulk, the enrollment (not student) relationship, live max-score validation, and the teacher-assignment scope that restricts every read and write |
+| 11 | [grading.md](grading.md) | Class-level-scoped grading scales and their percentage bands, inclusive boundary rules, overlap/gap handling, and the read-only percentage-to-grade calculation operation |
 
 ## Shared across modules
 
@@ -55,6 +57,8 @@ A later module depends on Module 02's academic state, so deploy in this order:
 7. **07** - subject catalogue and class-subject offerings
 8. **08** - teacher assignment
 9. **09** - assessment configuration
+10. **10** - score management
+11. **11** - grading
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -86,6 +90,17 @@ session is derived through it, never duplicated) and Module 07 (the class subjec
 belongs to) - not on Module 03, 04, 05, 06 or 08. Assessment configuration is independent of who
 teaches a class subject; a future scores module is what will connect the two. See
 [assessment-configuration.md](assessment-configuration.md) §0.
+
+Module 10 depends on Module 06 (the enrollment a score is recorded against), Module 08 (the
+teacher-assignment relationship that scopes who may record it) and Module 09 (the assessment a
+score belongs to, including its live `max_score`) - not on Module 03, 04, 05 or 07 directly.
+See [score-management.md](score-management.md) §0 and §4.
+
+Module 11 depends on Module 02 (the class levels a scale is scoped to) only - not on Module
+03, 04, 05, 06, 07, 08, 09 or 10. A grading scale interprets a percentage; it does not
+reference an assessment, an enrollment or a score at all. A future grading/result-compilation
+module is expected to compute a percentage (Module 10 already exposes one) and pass it to this
+module's calculation operation, not the other way around. See [grading.md](grading.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,
