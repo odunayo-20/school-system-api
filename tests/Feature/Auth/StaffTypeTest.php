@@ -59,18 +59,21 @@ test('two staff users of different types can hold different permissions', functi
     Staff::factory()->create(['user_id' => $teaching->id, 'staff_type' => StaffType::TEACHING]);
     Staff::factory()->create(['user_id' => $nonTeaching->id, 'staff_type' => StaffType::NON_TEACHING]);
 
-    // Stands in for the Module that will own results.* / attendance.* permissions. The names
-    // are deliberately ones no module owns: this file originally borrowed "students.view",
-    // which was hypothetical when it was written and became Module 04's real, seeded
-    // permission. A placeholder that a later module adopts is a trap - the test would keep
-    // passing while quietly meaning something else.
-    grantPermission($teaching, 'results.enter');
-    grantPermission($nonTeaching, 'attendance.record');
+    // Stands in for a module that will own its own permissions. The names are deliberately
+    // ones no module owns: this file has already had to rename this pair twice - it
+    // originally borrowed "students.view" (became Module 04's real, seeded permission), then
+    // "attendance.record" (became Module 17's). A placeholder that a later module adopts is a
+    // trap - the test would keep passing while quietly meaning something else, which is
+    // exactly what happened both times, caught only because the module that adopted the name
+    // also granted it to the whole STAFF role. "sandbox.*" is not a resource this project's
+    // domain will ever name.
+    grantPermission($teaching, 'sandbox.alpha');
+    grantPermission($nonTeaching, 'sandbox.beta');
 
-    expect($teaching->hasPermission('results.enter'))->toBeTrue()
-        ->and($teaching->hasPermission('attendance.record'))->toBeFalse()
-        ->and($nonTeaching->hasPermission('attendance.record'))->toBeTrue()
-        ->and($nonTeaching->hasPermission('results.enter'))->toBeFalse();
+    expect($teaching->hasPermission('sandbox.alpha'))->toBeTrue()
+        ->and($teaching->hasPermission('sandbox.beta'))->toBeFalse()
+        ->and($nonTeaching->hasPermission('sandbox.beta'))->toBeTrue()
+        ->and($nonTeaching->hasPermission('sandbox.alpha'))->toBeFalse();
 });
 
 test('the users table carries no staff specific columns', function () {

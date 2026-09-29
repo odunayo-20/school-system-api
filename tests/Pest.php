@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AdmissionStatus;
+use App\Enums\AttendanceStatus;
 use App\Enums\CatalogStatus;
 use App\Enums\EnrollmentStatus;
 use App\Enums\PromotionDecision;
@@ -13,6 +14,7 @@ use App\Models\AcademicSession;
 use App\Models\Admission;
 use App\Models\Assessment;
 use App\Models\AssessmentType;
+use App\Models\Attendance;
 use App\Models\ClassLevel;
 use App\Models\ClassSubject;
 use App\Models\Enrollment;
@@ -31,6 +33,7 @@ use App\Models\Subject;
 use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Attendance\AttendanceService;
 use App\Services\Promotion\PromotionService;
 use App\Services\Result\ResultService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1201,4 +1204,109 @@ function promotedStudent(?User $actor = null): Promotion
         'target_school_class_id' => $context['targetClass']->id,
         'target_section_id' => $context['targetSection']->id,
     ], $actor);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Attendance module helpers (Module 17)
+|--------------------------------------------------------------------------
+|
+| One class/section/session plus a handful of ACTIVE enrollments in it - the shape almost
+| every attendance test needs, matching promotionContext()'s own "assemble once, override
+| what one test is actually about" style.
+*/
+
+/**
+ * @return array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}
+ */
+function attendanceContext(int $studentCount = 3, array $enrollmentAttributes = []): array
+{
+    $class = selectableSchoolClass();
+    $section = Section::factory()->within($class, 'A', 'A')->create();
+    $session = eligibleSession();
+
+    $enrollments = collect(range(1, $studentCount))
+        ->map(fn (): Enrollment => activeEnrollment(array_merge([
+            'school_class_id' => $class->id,
+            'section_id' => $section->id,
+            'academic_session_id' => $session->id,
+        ], $enrollmentAttributes)))
+        ->all();
+
+    return [
+        'schoolClass' => $class,
+        'section' => $section,
+        'session' => $session,
+        'enrollments' => $enrollments,
+    ];
+}
+
+/**
+ * A valid single-attendance create payload for the first enrollment in a given context.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ */
+function attendancePayload(array $context, array $overrides = []): array
+{
+    return array_merge([
+        'enrollment_id' => $context['enrollments'][0]->id,
+        'academic_session_id' => $context['session']->id,
+        'school_class_id' => $context['schoolClass']->id,
+        'section_id' => $context['section']->id,
+        'date' => now()->toDateString(),
+        'status' => AttendanceStatus::PRESENT->value,
+    ], $overrides);
+}
+
+/**
+ * A valid bulk-attendance payload: one row per enrollment in the context, all PRESENT unless
+ * overridden per row.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ * @param  array<int, array<string, mixed>>  $rowOverrides  keyed by the enrollment's position in the context
+ */
+function attendanceBulkPayload(array $context, array $rowOverrides = [], array $overrides = []): array
+{
+    $attendances = collect($context['enrollments'])->values()->map(function (Enrollment $enrollment, int $index) use ($rowOverrides): array {
+        return array_merge([
+            'enrollment_id' => $enrollment->id,
+            'status' => AttendanceStatus::PRESENT->value,
+        ], $rowOverrides[$index] ?? []);
+    })->all();
+
+    return array_merge([
+        'academic_session_id' => $context['session']->id,
+        'school_class_id' => $context['schoolClass']->id,
+        'section_id' => $context['section']->id,
+        'date' => now()->toDateString(),
+        'attendances' => $attendances,
+    ], $overrides);
+}
+
+/**
+ * An actively employed TEACHING staff member assigned to teach some subject in this context's
+ * class, for this context's session - eligible under AttendanceService::isAssignedToClass(),
+ * without a test having to know which specific class subject makes that true.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ */
+function teacherAssignedToClass(array $context): Staff
+{
+    $classSubject = activeClassSubject(['school_class_id' => $context['schoolClass']->id]);
+
+    return teacherAssignedTo($classSubject, $context['session']);
+}
+
+/**
+ * A recorded attendance mark, built through the service's own create() path rather than the
+ * factory, so it genuinely reflects a real class/section/session/enrollment combination - a
+ * test that wants one already-recorded mark uses this instead of assembling one from
+ * AttendanceFactory by hand.
+ */
+function recordedAttendance(?array $context = null, ?User $actor = null): Attendance
+{
+    $context ??= attendanceContext(1);
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(AttendanceService::class)->create(attendancePayload($context), $actor);
 }

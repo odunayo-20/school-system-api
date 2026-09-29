@@ -5,6 +5,7 @@ namespace Tests;
 use Database\Seeders\AcademicPermissionSeeder;
 use Database\Seeders\AdmissionPermissionSeeder;
 use Database\Seeders\AssessmentPermissionSeeder;
+use Database\Seeders\AttendancePermissionSeeder;
 use Database\Seeders\EnrollmentPermissionSeeder;
 use Database\Seeders\GradingPermissionSeeder;
 use Database\Seeders\PermissionSeeder;
@@ -26,18 +27,18 @@ abstract class TestCase extends BaseTestCase
      * every module implemented so far, so authorization assertions are made against a
      * known baseline.
      *
-     * All fourteen permission seeders run, in the same order as DatabaseSeeder, and that
+     * All fifteen permission seeders run, in the same order as DatabaseSeeder, and that
      * order is load-bearing. PermissionSeeder grants Module 01's permissions with sync(),
      * which REPLACES each role's permission set; AcademicPermissionSeeder,
      * StaffPermissionSeeder, StudentPermissionSeeder, AdmissionPermissionSeeder,
      * EnrollmentPermissionSeeder, SubjectPermissionSeeder, TeacherAssignmentPermissionSeeder,
      * AssessmentPermissionSeeder, ScorePermissionSeeder, GradingPermissionSeeder,
-     * ResultPermissionSeeder, ReportCardPermissionSeeder and PromotionPermissionSeeder grant
-     * theirs with syncWithoutDetaching(), so running them afterwards adds to the set rather
-     * than replacing it. Seeded in the other order, the database would look correct and every
-     * Module 02 through Module 15 route would answer 403. That a test of the combined baseline
-     * depends on this is the point of seeding all fourteen here rather than only the ones the
-     * test under way needs.
+     * ResultPermissionSeeder, ReportCardPermissionSeeder, PromotionPermissionSeeder and
+     * AttendancePermissionSeeder grant theirs with syncWithoutDetaching(), so running them
+     * afterwards adds to the set rather than replacing it. Seeded in the other order, the
+     * database would look correct and every Module 02 through Module 17 route would answer
+     * 403. That a test of the combined baseline depends on this is the point of seeding all
+     * fifteen here rather than only the ones the test under way needs.
      */
     protected function setUp(): void
     {
@@ -59,6 +60,7 @@ abstract class TestCase extends BaseTestCase
             ResultPermissionSeeder::class,
             ReportCardPermissionSeeder::class,
             PromotionPermissionSeeder::class,
+            AttendancePermissionSeeder::class,
         ]);
     }
 }

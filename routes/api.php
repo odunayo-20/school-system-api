@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\Academic\TermController;
 use App\Http\Controllers\Api\V1\Admission\AdmissionController;
 use App\Http\Controllers\Api\V1\Assessment\AssessmentController;
 use App\Http\Controllers\Api\V1\Assessment\AssessmentTypeController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceController;
 use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
@@ -900,3 +901,50 @@ Route::middleware(['auth:api', 'active'])->group(function (): void {
 Route::post('result-checker', [ResultCheckerController::class, 'check'])
     ->middleware('throttle:result-checker')
     ->name('result-checker.check');
+
+/*
+|--------------------------------------------------------------------------
+| Attendance
+|--------------------------------------------------------------------------
+|
+| Module 17. Whether a specific student was present, absent, late or excused on a specific
+| date, against a specific enrollment - never a mutable column on Student or Enrollment. See
+| the attendances migration for the full reasoning, in particular why academic_session_id/
+| school_class_id/section_id are copied from the enrollment rather than purely derived.
+|
+| One filterable GET /attendance list endpoint serves class-register reads, student history
+| and date-range queries alike, rather than a separate route per angle - the identical
+| "one endpoint, many filters" shape Module 10's own scores.* already established.
+|
+| GET /attendance/summary and POST /attendance/bulk are both registered BEFORE
+| GET|PUT /attendance/{attendance} so neither literal segment is swallowed by the wildcard.
+|
+| No destroy(): attendance is academic history, the same posture every anchor table since
+| Module 06 already takes. A mistaken mark is corrected through PUT, not erased.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('attendance')->name('attendance.')->group(function (): void {
+    Route::get('/', [AttendanceController::class, 'index'])
+        ->middleware('permission:attendance.view')
+        ->name('index');
+
+    Route::post('/', [AttendanceController::class, 'store'])
+        ->middleware('permission:attendance.record')
+        ->name('store');
+
+    Route::post('bulk', [AttendanceController::class, 'bulkStore'])
+        ->middleware('permission:attendance.record')
+        ->name('bulk-store');
+
+    Route::get('summary', [AttendanceController::class, 'summary'])
+        ->middleware('permission:attendance.view')
+        ->name('summary');
+
+    Route::get('{attendance}', [AttendanceController::class, 'show'])
+        ->middleware('permission:attendance.view')
+        ->name('show');
+
+    Route::put('{attendance}', [AttendanceController::class, 'update'])
+        ->middleware('permission:attendance.update')
+        ->name('update');
+});
