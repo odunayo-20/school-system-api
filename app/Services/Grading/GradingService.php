@@ -139,6 +139,25 @@ class GradingService
     }
 
     /**
+     * The ACTIVE grading scale for a class level, or null when the school has not configured
+     * one yet - not an error, since Module 11's own "at most one ACTIVE scale per class level"
+     * invariant (the unique(class_level_id, active_marker) index) is exactly what makes this
+     * lookup unambiguous. This is the one place Module 12 (Result Compilation) is expected to
+     * reach into grading configuration, so the lookup lives here rather than being
+     * re-implemented with raw Eloquent in a second module - see the Module 12 audit for why
+     * keeping every grading lookup behind this service is what "one authoritative calculation
+     * path" (its own brief's own words) actually means in practice.
+     */
+    public function findActiveForClassLevel(int $classLevelId): ?GradingScale
+    {
+        return GradingScale::query()
+            ->where('class_level_id', $classLevelId)
+            ->where('status', CatalogStatus::ACTIVE->value)
+            ->with('items')
+            ->first();
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $items
      * @return list<array<string, mixed>>
      */

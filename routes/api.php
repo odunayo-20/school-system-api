@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\Academic\TermController;
 use App\Http\Controllers\Api\V1\Admission\AdmissionController;
 use App\Http\Controllers\Api\V1\Assessment\AssessmentController;
 use App\Http\Controllers\Api\V1\Assessment\AssessmentTypeController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceController;
 use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
@@ -17,6 +18,10 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
+use App\Http\Controllers\Api\V1\Promotion\PromotionController;
+use App\Http\Controllers\Api\V1\ReportCard\ReportCardController;
+use App\Http\Controllers\Api\V1\Result\ResultController;
+use App\Http\Controllers\Api\V1\ResultChecker\ResultCheckerController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
@@ -748,4 +753,198 @@ Route::middleware(['auth:api', 'active'])->prefix('grading-scales')->name('gradi
     Route::post('{gradingScale}/calculate', [GradingScaleController::class, 'calculate'])
         ->middleware('permission:grading_scales.view')
         ->name('calculate');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Result compilation, approval and publication
+|--------------------------------------------------------------------------
+|
+| Module 12. The compiled academic outcome for one student's enrollment, in one class
+| subject, for one term - raw Assessment Scores (Module 10) transformed into a percentage,
+| and (once every configured assessment has a score) a grade, grade point and remark through
+| Module 11's grading scale. See the results migration for why this is one table, not a
+| parent Result plus child ResultItem rows.
+|
+| results.* has NO delete endpoint and no plain store()/update() - a result is written only
+| through compile()/bulk and the four workflow actions below, never a raw create or amend of
+| client-supplied values. Recompiling (the identical compile operation, run again after a
+| score correction) is how a COMPILED-or-earlier result changes; once submitted, it can only
+| move forward through the workflow - see ResultService::persist()/isRecompilable().
+|
+| POST /results/bulk shares results.compile rather than a separate permission: compiling a
+| whole class subject's results in one call is the same capability as compiling one student's.
+|
+| Module 13 adds the linear workflow COMPILED -> SUBMITTED -> APPROVED -> PUBLISHED -> LOCKED,
+| as four POST .../{action} routes - the identical shape Module 06's enrollments/{id}/withdraw
+| and Module 08's teacher-assignments/{id}/end|cancel already use for a state transition, each
+| gated on its OWN permission rather than reusing results.compile. None accepts a request body:
+| the server alone determines the next state, never a client-supplied "status".
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('results')->name('results.')->group(function (): void {
+    Route::get('/', [ResultController::class, 'index'])
+        ->middleware('permission:results.view')
+        ->name('index');
+
+    Route::post('compile', [ResultController::class, 'compile'])
+        ->middleware('permission:results.compile')
+        ->name('compile');
+
+    Route::post('bulk', [ResultController::class, 'bulkCompile'])
+        ->middleware('permission:results.compile')
+        ->name('bulk-compile');
+
+    Route::get('{result}', [ResultController::class, 'show'])
+        ->middleware('permission:results.view')
+        ->name('show');
+
+    Route::post('{result}/submit', [ResultController::class, 'submit'])
+        ->middleware('permission:results.submit')
+        ->name('submit');
+
+    Route::post('{result}/approve', [ResultController::class, 'approve'])
+        ->middleware('permission:results.approve')
+        ->name('approve');
+
+    Route::post('{result}/publish', [ResultController::class, 'publish'])
+        ->middleware('permission:results.publish')
+        ->name('publish');
+
+    Route::post('{result}/lock', [ResultController::class, 'lock'])
+        ->middleware('permission:results.lock')
+        ->name('lock');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Report cards
+|--------------------------------------------------------------------------
+|
+| Module 14. A read-only presentation of a student's finalized subject results for one
+| enrollment and one term - never a second calculation of them. Every figure rendered here is
+| read directly from Module 12's Result rows exactly as Module 13 left them; see
+| ReportCardService's own docblock for the full reasoning, and why only PUBLISHED and LOCKED
+| results ever appear.
+|
+| Two GET routes only - report_cards.view gates both. No POST/PUT/DELETE exists: a report card
+| has no lifecycle of its own to mutate.
+|
+| /report-cards/enrollments/{enrollment}/terms/{term} reuses two EXISTING identifiers -
+| enrollment_id and term_id, the same pair results.enrollment_id/results.term_id already key
+| on - rather than inventing a third "report card id" or keying off student_id/session_id the
+| way a student's identity alone never safely identifies a placement (the same reasoning every
+| module since Module 06 already applies).
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('report-cards')->name('report-cards.')->group(function (): void {
+    Route::get('enrollments/{enrollment}/terms/{term}', [ReportCardController::class, 'show'])
+        ->middleware('permission:report_cards.view')
+        ->name('show');
+
+    Route::get('students/{student}', [ReportCardController::class, 'forStudent'])
+        ->middleware('permission:report_cards.view')
+        ->name('for-student');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Student promotion
+|--------------------------------------------------------------------------
+|
+| Module 15. Recording what happens to a student's placement going into a new academic
+| session - PROMOTED, RETAINED, GRADUATED or NOT_ELIGIBLE - never a mutation of the source
+| enrollment. See the promotions migration and PromotionService for the full reasoning.
+|
+| POST /students/{student}/promote lives alongside GET/PUT /students/{student} (Module 04)
+| rather than inside that module's own route group, because it is owned by a different
+| controller and permission - the identical "same URL family, separate ownership" shape
+| results/{result}/submit|approve|... (Module 13) already establishes for a route that reads
+| like it belongs to one resource but is gated and served by another module entirely.
+|
+| No destroy(), no update(): a promotion decision is a one-shot historical fact. No bulk
+| endpoint either - see the Module 15 audit for why bulk promotion is deliberately deferred.
+*/
+
+Route::middleware(['auth:api', 'active'])->group(function (): void {
+    Route::post('students/{student}/promote', [PromotionController::class, 'store'])
+        ->middleware('permission:promotions.create')
+        ->name('students.promote');
+
+    Route::prefix('promotions')->name('promotions.')->group(function (): void {
+        Route::get('/', [PromotionController::class, 'index'])
+            ->middleware('permission:promotions.view')
+            ->name('index');
+
+        Route::get('{promotion}', [PromotionController::class, 'show'])
+            ->middleware('permission:promotions.view')
+            ->name('show');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Result checker
+|--------------------------------------------------------------------------
+|
+| Module 16. A public, unauthenticated way to retrieve a student's already-PUBLISHED (or
+| LOCKED) result, for a parent or guardian with no portal login - the audience Module 14's own
+| report-card docs already anticipated this module for. No auth:api/active middleware and no
+| permission gate: the credential is the request body (student_number + date_of_birth), not a
+| bearer token. "throttle:result-checker" is this endpoint's own brute-force protection, the
+| same technique "throttle:login" already gives credential guessing above.
+|
+| Reuses ReportCardService::forEnrollmentAndTermUnguarded() (Module 14) and ReportCardResource
+| unchanged - never a second result-calculation engine or a second presentation format.
+*/
+
+Route::post('result-checker', [ResultCheckerController::class, 'check'])
+    ->middleware('throttle:result-checker')
+    ->name('result-checker.check');
+
+/*
+|--------------------------------------------------------------------------
+| Attendance
+|--------------------------------------------------------------------------
+|
+| Module 17. Whether a specific student was present, absent, late or excused on a specific
+| date, against a specific enrollment - never a mutable column on Student or Enrollment. See
+| the attendances migration for the full reasoning, in particular why academic_session_id/
+| school_class_id/section_id are copied from the enrollment rather than purely derived.
+|
+| One filterable GET /attendance list endpoint serves class-register reads, student history
+| and date-range queries alike, rather than a separate route per angle - the identical
+| "one endpoint, many filters" shape Module 10's own scores.* already established.
+|
+| GET /attendance/summary and POST /attendance/bulk are both registered BEFORE
+| GET|PUT /attendance/{attendance} so neither literal segment is swallowed by the wildcard.
+|
+| No destroy(): attendance is academic history, the same posture every anchor table since
+| Module 06 already takes. A mistaken mark is corrected through PUT, not erased.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('attendance')->name('attendance.')->group(function (): void {
+    Route::get('/', [AttendanceController::class, 'index'])
+        ->middleware('permission:attendance.view')
+        ->name('index');
+
+    Route::post('/', [AttendanceController::class, 'store'])
+        ->middleware('permission:attendance.record')
+        ->name('store');
+
+    Route::post('bulk', [AttendanceController::class, 'bulkStore'])
+        ->middleware('permission:attendance.record')
+        ->name('bulk-store');
+
+    Route::get('summary', [AttendanceController::class, 'summary'])
+        ->middleware('permission:attendance.view')
+        ->name('summary');
+
+    Route::get('{attendance}', [AttendanceController::class, 'show'])
+        ->middleware('permission:attendance.view')
+        ->name('show');
+
+    Route::put('{attendance}', [AttendanceController::class, 'update'])
+        ->middleware('permission:attendance.update')
+        ->name('update');
 });

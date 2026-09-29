@@ -1,8 +1,11 @@
 <?php
 
 use App\Enums\AdmissionStatus;
+use App\Enums\AttendanceStatus;
 use App\Enums\CatalogStatus;
 use App\Enums\EnrollmentStatus;
+use App\Enums\PromotionDecision;
+use App\Enums\ResultStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
 use App\Enums\TeacherAssignmentStatus;
@@ -11,11 +14,14 @@ use App\Models\AcademicSession;
 use App\Models\Admission;
 use App\Models\Assessment;
 use App\Models\AssessmentType;
+use App\Models\Attendance;
 use App\Models\ClassLevel;
 use App\Models\ClassSubject;
 use App\Models\Enrollment;
 use App\Models\GradingScale;
 use App\Models\Permission;
+use App\Models\Promotion;
+use App\Models\Result;
 use App\Models\Role as RoleModel;
 use App\Models\School;
 use App\Models\SchoolClass;
@@ -27,7 +33,11 @@ use App\Models\Subject;
 use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Attendance\AttendanceService;
+use App\Services\Promotion\PromotionService;
+use App\Services\Result\ResultService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -920,4 +930,383 @@ function rosterEnrollments(Assessment $assessment, int $count): array
         'section_id' => $section->id,
         'academic_session_id' => $session->id,
     ])->id)->all();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Result compilation module helpers (Module 12)
+|--------------------------------------------------------------------------
+|
+| compile() needs everything matchedScoreContext() already assembles (an assessment and an
+| enrollment agreeing on class and session) PLUS a recorded Score against that assessment for
+| the result to calculate as COMPLETE rather than INCOMPLETE. resultCompilationContext() builds
+| all of it together so a test that wants a genuinely compilable result does not have to wire
+| six models by hand.
+|
+*/
+
+/**
+ * An assessment (with a recorded score) and a matched enrollment - everything compile() needs
+ * to produce a COMPLETE result for a single-assessment class subject. Returns the pieces
+ * rather than a container, matching matchedScoreContext()'s own reasoning.
+ *
+ * @return array{0: Assessment, 1: Enrollment, 2: Score}
+ */
+function resultCompilationContext(array $assessmentAttributes = [], array $enrollmentAttributes = [], float $score = 15): array
+{
+    [$assessment, $enrollment] = matchedScoreContext($assessmentAttributes, $enrollmentAttributes);
+
+    $recordedScore = Score::factory()
+        ->forAssessment($assessment)
+        ->forEnrollment($enrollment)
+        ->create(['score' => $score]);
+
+    return [$assessment, $enrollment, $recordedScore];
+}
+
+/**
+ * A valid compile payload, built from a freshly matched, fully-scored context. A caller
+ * overriding enrollment_id/class_subject_id/term_id is responsible for the consistency of what
+ * it overrides - the same posture scoreCreatePayload() takes for its own foreign keys.
+ */
+function compileResultPayload(array $overrides = []): array
+{
+    [$assessment, $enrollment] = resultCompilationContext();
+
+    return array_merge([
+        'enrollment_id' => $enrollment->id,
+        'class_subject_id' => $assessment->class_subject_id,
+        'term_id' => $assessment->term_id,
+    ], $overrides);
+}
+
+/**
+ * A compiled result, built through the service's own persist path (compile()) rather than the
+ * factory, so its percentage/grade/status genuinely reflect a real assessment+score pair - a
+ * test that wants a freshly compiled row to recompile against uses this instead of assembling
+ * one from ResultFactory by hand.
+ */
+function compiledResult(?User $actor = null): Result
+{
+    [$assessment, $enrollment] = resultCompilationContext();
+
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(ResultService::class)->compile([
+        'enrollment_id' => $enrollment->id,
+        'class_subject_id' => $assessment->class_subject_id,
+        'term_id' => $assessment->term_id,
+    ], $actor);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Result approval/publication workflow helpers (Module 13)
+|--------------------------------------------------------------------------
+|
+| Each state is built through the SERVICE's own transition, chained from the one before it,
+| rather than assembled directly on ResultFactory - the identical reasoning compiledResult()
+| already gives: a test asserting against a SUBMITTED/APPROVED/PUBLISHED/LOCKED result should
+| exercise the real path that produces one, including its real enrollment/class-subject/term
+| relations, not a shape hand-built to merely look right. The actor for each individual
+| transition defaults to an ADMIN (unrestricted, so no teacher assignment is required to reach
+| a given state) unless a test names one, matching compiledResult()'s own default.
+|
+*/
+
+function submittedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->submit(compiledResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function approvedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->approve(submittedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function publishedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->publish(approvedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function lockedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->lock(publishedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+/*
+|--------------------------------------------------------------------------
+| Report card module helpers (Module 14)
+|--------------------------------------------------------------------------
+|
+| A report card aggregates MULTIPLE Result rows sharing one enrollment and one term - the one
+| shape no existing Module 12/13 helper builds, since each of those is deliberately scoped to
+| a single, freshly matched class subject. reportCardContext() builds one enrollment and term
+| once, then $count distinct class subjects (each with its own assessment, score and Result)
+| against that SAME pair, driving each Result through the real compile()/submit()/approve()/
+| publish()/lock() pipeline up to $targetStatus - never assembled by hand, so a report-card
+| test exercises genuinely authoritative data.
+|
+*/
+
+/**
+ * @return array{0: Enrollment, 1: Term, 2: Collection<int, Result>}
+ */
+function reportCardContext(
+    int $count = 2,
+    ResultStatus $targetStatus = ResultStatus::PUBLISHED,
+    array $enrollmentAttributes = [],
+): array {
+    $class = selectableSchoolClass();
+    $session = eligibleSession();
+    $term = Term::factory()->forSession($session, 1)->create();
+    $section = Section::factory()->within($class, 'A', 'A')->create();
+    $enrollment = activeEnrollment(array_merge([
+        'school_class_id' => $class->id,
+        'section_id' => $section->id,
+        'academic_session_id' => $session->id,
+    ], $enrollmentAttributes));
+
+    $admin = userWithRole(Role::ADMIN);
+    $service = app(ResultService::class);
+
+    $results = collect(range(1, $count))->map(function (int $i) use ($class, $term, $enrollment, $admin, $service, $targetStatus): Result {
+        $classSubject = activeClassSubject(['school_class_id' => $class->id]);
+        $assessment = activeAssessment([
+            'class_subject_id' => $classSubject->id,
+            'term_id' => $term->id,
+            'max_score' => 20,
+        ]);
+
+        Score::factory()->forAssessment($assessment)->forEnrollment($enrollment)->create([
+            'score' => 10 + $i,
+        ]);
+
+        $result = $service->compile([
+            'enrollment_id' => $enrollment->id,
+            'class_subject_id' => $classSubject->id,
+            'term_id' => $term->id,
+        ], $admin);
+
+        foreach ([ResultStatus::SUBMITTED, ResultStatus::APPROVED, ResultStatus::PUBLISHED, ResultStatus::LOCKED] as $step) {
+            if ($result->status === $targetStatus) {
+                break;
+            }
+
+            $result = match ($step) {
+                ResultStatus::SUBMITTED => $service->submit($result, $admin),
+                ResultStatus::APPROVED => $service->approve($result, $admin),
+                ResultStatus::PUBLISHED => $service->publish($result, $admin),
+                ResultStatus::LOCKED => $service->lock($result, $admin),
+                default => $result,
+            };
+        }
+
+        return $result;
+    });
+
+    return [$enrollment, $term, $results];
+}
+
+/*
+|--------------------------------------------------------------------------
+| Promotion module helpers (Module 15)
+|--------------------------------------------------------------------------
+|
+| Chronological ordering matters for almost every promotion test, and
+| AcademicSession::factory()'s own default start_date is a random HISTORICAL date, not "now" -
+| confirmed directly while smoke-testing this module's own service, the hard way, before any
+| test was written. promotionSession() therefore always takes an explicit start/end date rather
+| than leaning on the factory default, and promotionContext() builds a source session strictly
+| before its target session for exactly this reason.
+|
+*/
+
+function promotionSession(string $startDate, string $endDate): AcademicSession
+{
+    return AcademicSession::factory()->create(['start_date' => $startDate, 'end_date' => $endDate]);
+}
+
+/**
+ * A source enrollment ready to be promoted: one class level holding a source class ("JSS 2")
+ * and a target class ("JSS 3") - the brief's own worked example - each with its own section
+ * named "A", a source session and a strictly later target session, and an ACTIVE enrollment
+ * placing a student in the source class/section for the source session.
+ *
+ * class_level_id-scoped uniqueness (Module 07's own design) means the literal names/codes
+ * below never collide across calls: each call builds a FRESH class level, so "JSS 2"/"JSS 3"
+ * are always new rows, never a second attempt at an existing one.
+ *
+ * @return array{enrollment: Enrollment, sourceClass: SchoolClass, targetClass: SchoolClass, sourceSection: Section, targetSection: Section, sourceSession: AcademicSession, targetSession: AcademicSession}
+ */
+function promotionContext(array $enrollmentAttributes = []): array
+{
+    $classLevel = ClassLevel::factory()->create();
+    $sourceClass = SchoolClass::factory()->within($classLevel, 'JSS 2', 'JSS2')->create();
+    $targetClass = SchoolClass::factory()->within($classLevel, 'JSS 3', 'JSS3')->create();
+    $sourceSection = Section::factory()->within($sourceClass, 'A', 'A')->create();
+    $targetSection = Section::factory()->within($targetClass, 'A', 'A')->create();
+
+    $sourceSession = promotionSession('2025-09-01', '2026-07-31');
+    $targetSession = promotionSession('2026-09-01', '2027-07-31');
+
+    $enrollment = activeEnrollment(array_merge([
+        'school_class_id' => $sourceClass->id,
+        'section_id' => $sourceSection->id,
+        'academic_session_id' => $sourceSession->id,
+    ], $enrollmentAttributes));
+
+    return [
+        'enrollment' => $enrollment,
+        'sourceClass' => $sourceClass,
+        'targetClass' => $targetClass,
+        'sourceSection' => $sourceSection,
+        'targetSection' => $targetSection,
+        'sourceSession' => $sourceSession,
+        'targetSession' => $targetSession,
+    ];
+}
+
+/**
+ * A valid PROMOTED payload built from a freshly matched promotionContext(). A caller
+ * overriding source_enrollment_id/target_academic_session_id is responsible for the
+ * consistency of what it overrides - the same posture scoreCreatePayload() takes for its own
+ * foreign keys.
+ *
+ * @param  array{enrollment: Enrollment, sourceClass: SchoolClass, targetClass: SchoolClass, sourceSection: Section, targetSection: Section, sourceSession: AcademicSession, targetSession: AcademicSession}  $context
+ */
+function promotePayload(array $context, array $overrides = []): array
+{
+    return array_merge([
+        'source_enrollment_id' => $context['enrollment']->id,
+        'target_academic_session_id' => $context['targetSession']->id,
+        'decision' => PromotionDecision::PROMOTED->value,
+        'target_school_class_id' => $context['targetClass']->id,
+        'target_section_id' => $context['targetSection']->id,
+    ], $overrides);
+}
+
+/**
+ * A recorded PROMOTED decision, built through the service's own promote() path rather than
+ * the factory, so its target enrollment genuinely reflects a real class/section pair - a test
+ * that wants a freshly promoted student uses this instead of assembling one from
+ * PromotionFactory by hand.
+ */
+function promotedStudent(?User $actor = null): Promotion
+{
+    $context = promotionContext();
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(PromotionService::class)->promote($context['enrollment']->student, [
+        'source_enrollment_id' => $context['enrollment']->id,
+        'target_academic_session_id' => $context['targetSession']->id,
+        'decision' => PromotionDecision::PROMOTED->value,
+        'target_school_class_id' => $context['targetClass']->id,
+        'target_section_id' => $context['targetSection']->id,
+    ], $actor);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Attendance module helpers (Module 17)
+|--------------------------------------------------------------------------
+|
+| One class/section/session plus a handful of ACTIVE enrollments in it - the shape almost
+| every attendance test needs, matching promotionContext()'s own "assemble once, override
+| what one test is actually about" style.
+*/
+
+/**
+ * @return array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}
+ */
+function attendanceContext(int $studentCount = 3, array $enrollmentAttributes = []): array
+{
+    $class = selectableSchoolClass();
+    $section = Section::factory()->within($class, 'A', 'A')->create();
+    $session = eligibleSession();
+
+    $enrollments = collect(range(1, $studentCount))
+        ->map(fn (): Enrollment => activeEnrollment(array_merge([
+            'school_class_id' => $class->id,
+            'section_id' => $section->id,
+            'academic_session_id' => $session->id,
+        ], $enrollmentAttributes)))
+        ->all();
+
+    return [
+        'schoolClass' => $class,
+        'section' => $section,
+        'session' => $session,
+        'enrollments' => $enrollments,
+    ];
+}
+
+/**
+ * A valid single-attendance create payload for the first enrollment in a given context.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ */
+function attendancePayload(array $context, array $overrides = []): array
+{
+    return array_merge([
+        'enrollment_id' => $context['enrollments'][0]->id,
+        'academic_session_id' => $context['session']->id,
+        'school_class_id' => $context['schoolClass']->id,
+        'section_id' => $context['section']->id,
+        'date' => now()->toDateString(),
+        'status' => AttendanceStatus::PRESENT->value,
+    ], $overrides);
+}
+
+/**
+ * A valid bulk-attendance payload: one row per enrollment in the context, all PRESENT unless
+ * overridden per row.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ * @param  array<int, array<string, mixed>>  $rowOverrides  keyed by the enrollment's position in the context
+ */
+function attendanceBulkPayload(array $context, array $rowOverrides = [], array $overrides = []): array
+{
+    $attendances = collect($context['enrollments'])->values()->map(function (Enrollment $enrollment, int $index) use ($rowOverrides): array {
+        return array_merge([
+            'enrollment_id' => $enrollment->id,
+            'status' => AttendanceStatus::PRESENT->value,
+        ], $rowOverrides[$index] ?? []);
+    })->all();
+
+    return array_merge([
+        'academic_session_id' => $context['session']->id,
+        'school_class_id' => $context['schoolClass']->id,
+        'section_id' => $context['section']->id,
+        'date' => now()->toDateString(),
+        'attendances' => $attendances,
+    ], $overrides);
+}
+
+/**
+ * An actively employed TEACHING staff member assigned to teach some subject in this context's
+ * class, for this context's session - eligible under AttendanceService::isAssignedToClass(),
+ * without a test having to know which specific class subject makes that true.
+ *
+ * @param  array{schoolClass: SchoolClass, section: Section, session: AcademicSession, enrollments: list<Enrollment>}  $context
+ */
+function teacherAssignedToClass(array $context): Staff
+{
+    $classSubject = activeClassSubject(['school_class_id' => $context['schoolClass']->id]);
+
+    return teacherAssignedTo($classSubject, $context['session']);
+}
+
+/**
+ * A recorded attendance mark, built through the service's own create() path rather than the
+ * factory, so it genuinely reflects a real class/section/session/enrollment combination - a
+ * test that wants one already-recorded mark uses this instead of assembling one from
+ * AttendanceFactory by hand.
+ */
+function recordedAttendance(?array $context = null, ?User $actor = null): Attendance
+{
+    $context ??= attendanceContext(1);
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(AttendanceService::class)->create(attendancePayload($context), $actor);
 }

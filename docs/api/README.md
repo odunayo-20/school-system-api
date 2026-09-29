@@ -16,6 +16,10 @@ permissions, and the client-side checklist.
 | 09 | [assessment-configuration.md](assessment-configuration.md) | The assessment type catalogue and the assessments configured against a class subject and term - CA1/CA2/CA3, max score and weight - and why there is no score, grade or result column yet |
 | 10 | [score-management.md](score-management.md) | Recording what a student obtained against a configured assessment, single or bulk, the enrollment (not student) relationship, live max-score validation, and the teacher-assignment scope that restricts every read and write |
 | 11 | [grading.md](grading.md) | Class-level-scoped grading scales and their percentage bands, inclusive boundary rules, overlap/gap handling, and the read-only percentage-to-grade calculation operation |
+| 12 | [result-compilation.md](result-compilation.md) | Compiling raw assessment scores into a subject result for one enrollment, class subject and term - the weighting rules, the missing-scores policy, idempotent recompilation, and why there is no create/update/delete endpoint |
+| 13 | [result-approval-publication.md](result-approval-publication.md) | The result lifecycle from COMPILED through SUBMITTED, APPROVED, PUBLISHED to the terminal LOCKED state - workflow permissions, structural separation of duties, and why compilation is refused past COMPILED |
+| 14 | [report-cards.md](report-cards.md) | A read-only presentation of a student's finalized (PUBLISHED/LOCKED) subject results for one enrollment and term - why there is no `report_cards` table, the summary's plain arithmetic mean, and the first student-facing academic-data permission in this project |
+| 15 | [student-promotion.md](student-promotion.md) | Recording PROMOTED/RETAINED/GRADUATED/NOT_ELIGIBLE decisions as new `Enrollment` rows, never a mutation of the old one or a `current_class_id` on `Student` - the two-layer idempotency guarantee, and why there is no automatic promotion formula |
 
 ## Shared across modules
 
@@ -59,6 +63,10 @@ A later module depends on Module 02's academic state, so deploy in this order:
 9. **09** - assessment configuration
 10. **10** - score management
 11. **11** - grading
+12. **12** - result compilation
+13. **13** - result approval & publication
+14. **14** - report cards
+15. **15** - student promotion
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -101,6 +109,36 @@ Module 11 depends on Module 02 (the class levels a scale is scoped to) only - no
 reference an assessment, an enrollment or a score at all. A future grading/result-compilation
 module is expected to compute a percentage (Module 10 already exposes one) and pass it to this
 module's calculation operation, not the other way around. See [grading.md](grading.md) §0.
+
+Module 12 depends on Module 06 (the enrollment a result is compiled for), Module 09 (the
+assessments a result aggregates, including their live weights), Module 10 (the scores recorded
+against those assessments) and Module 11 (the grading scale a complete result is interpreted
+through) - not on Module 03, 04, 05, 07 or 08 directly, though it reuses Module 08's own
+teacher-assignment scoping technique. It is the first module to require three foreign keys at
+once (`enrollment_id`, `class_subject_id`, `term_id`), none derivable from either of the other
+two. See [result-compilation.md](result-compilation.md) §0.
+
+Module 13 depends on Module 12 only (the result it moves through its own workflow) - not on
+Module 03 through 11 directly, though `submit()` reuses Module 08's teacher-assignment scoping
+technique exactly as Module 12 already does for `compile()`. It adds no new table: the
+workflow lives entirely on `results.status`, the same column Module 12 introduced. See
+[result-approval-publication.md](result-approval-publication.md) §0.
+
+Module 14 depends on Module 12 (the `Result` rows it presents) and Module 13 (the
+`PUBLISHED`/`LOCKED` statuses that gate what it shows) only - not on Module 03 through 11
+directly. It adds no table of its own: a report card is a read-only aggregate over `Result`
+rows already grouped by `enrollment_id` and `term_id`. It is also the first module to grant
+`STUDENT` a permission over academic data about themselves beyond Module 01's `profile.*` pair.
+See [report-cards.md](report-cards.md) §0.
+
+Module 15 depends on Module 02 (the target academic session a decision names), Module 04 (the
+student a decision is about) and Module 06 (the source enrollment a decision is recorded against,
+and the `EnrollmentService::create()` this module calls directly to place a `PROMOTED`/`RETAINED`
+student into their target class) - not on Module 03, 05, 07 through 14 directly, though it reuses
+Module 04's `StudentService::update()` unchanged for the `GRADUATED` transition. It adds one new
+table, `promotions`, specifically because `GRADUATED` and `NOT_ELIGIBLE` produce no enrollment row
+for a decision to attach to - every other decision is recorded as a plain new `Enrollment`, never
+a mutation of the source one. See [student-promotion.md](student-promotion.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,
