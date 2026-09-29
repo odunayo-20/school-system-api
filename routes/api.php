@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
+use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Student\StudentController;
 use Illuminate\Support\Facades\Route;
@@ -416,4 +417,56 @@ Route::middleware(['auth:api', 'active'])->prefix('admissions')->name('admission
     Route::post('{admission}/withdraw', [AdmissionController::class, 'withdraw'])
         ->middleware('permission:admissions.withdraw')
         ->name('withdraw');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Student enrollment routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 06. An enrollment is the authoritative academic placement - student, session, class
+| and section - for one academic session. It is not the student's identity (Module 04) and
+| not the decision that may have preceded it (Module 05); see the enrollments migration.
+|
+| The permissions are seeded by EnrollmentPermissionSeeder and need no code change to take
+| effect.
+|
+| NO delete endpoint and no enrollments.delete permission, for the same reason Module 03, 04
+| and 05 have none - stronger here, because results, attendance, promotion and report cards
+| are all expected to reference this row. `cancel` is the record-preserving replacement.
+|
+| Two dedicated workflow endpoints - withdraw, cancel - rather than reaching status through
+| PUT, following Module 05's admit/reject/withdraw pattern: each is a state transition with a
+| permanent effect, so each is gated on its own permission, independent of enrollments.update.
+|
+| PUT touches only enrollment_date and notes. There is no route or field through which the
+| placement itself (student_id, academic_session_id, school_class_id, section_id) can be
+| changed once created - a transfer/class-change operation is explicitly out of this module's
+| scope; see the Module 06 audit.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('enrollments')->name('enrollments.')->group(function (): void {
+    Route::get('/', [EnrollmentController::class, 'index'])
+        ->middleware('permission:enrollments.view')
+        ->name('index');
+
+    Route::post('/', [EnrollmentController::class, 'store'])
+        ->middleware('permission:enrollments.create')
+        ->name('store');
+
+    Route::get('{enrollment}', [EnrollmentController::class, 'show'])
+        ->middleware('permission:enrollments.view')
+        ->name('show');
+
+    Route::put('{enrollment}', [EnrollmentController::class, 'update'])
+        ->middleware('permission:enrollments.update')
+        ->name('update');
+
+    Route::post('{enrollment}/withdraw', [EnrollmentController::class, 'withdraw'])
+        ->middleware('permission:enrollments.withdraw')
+        ->name('withdraw');
+
+    Route::post('{enrollment}/cancel', [EnrollmentController::class, 'cancel'])
+        ->middleware('permission:enrollments.cancel')
+        ->name('cancel');
 });

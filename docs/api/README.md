@@ -10,6 +10,7 @@ permissions, and the client-side checklist.
 | 03 | [staff-management.md](staff-management.md) | Staff listing and search, creating a staff record with its login account, employment status, terminating an employment |
 | 04 | [student-management.md](student-management.md) | The pupil roll: creating a pupil with no login, derived student numbers, roll status, why a pupil is never deleted |
 | 05 | [admission-management.md](admission-management.md) | Recording and deciding admissions, the `admit`/`reject`/`withdraw` workflow, and how admitting an applicant creates a student |
+| 06 | [enrollment-management.md](enrollment-management.md) | The authoritative academic placement - student, session, class, section - one row per session, and why `students` still has no `current_class_id` |
 
 ## Shared across modules
 
@@ -47,6 +48,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 3. **03** - staff establishment
 4. **04** - the pupil roll
 5. **05** - admission management
+6. **06** - student enrollment
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -56,6 +58,12 @@ Module 05 depends on Module 01 (auth), Module 02 (the academic session an admiss
 and Module 04 (it creates students through `StudentService`, never a second implementation of
 what a pupil's row looks like) - see
 [admission-management.md](admission-management.md) §0.
+
+Module 06 depends on Module 01, Module 02 (the session, class and section a placement names)
+and Module 04 (the student being placed) - but deliberately **not** on Module 05: an admission
+is never required before enrollment, because Module 04's own `POST /students` remains an
+independent path to a student. See
+[enrollment-management.md](enrollment-management.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,

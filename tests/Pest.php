@@ -1,15 +1,18 @@
 <?php
 
 use App\Enums\AdmissionStatus;
+use App\Enums\EnrollmentStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
 use App\Enums\UserStatus;
 use App\Models\AcademicSession;
 use App\Models\Admission;
 use App\Models\ClassLevel;
+use App\Models\Enrollment;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
+use App\Models\Section;
 use App\Models\Staff;
 use App\Models\Student;
 use App\Models\Term;
@@ -404,4 +407,105 @@ function decidedAdmission(AdmissionStatus $status, array $attributes = []): Admi
 function selectableClassLevel(): ClassLevel
 {
     return ClassLevel::factory()->create();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Enrollment module helpers (Module 06)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: an ACTIVE student, a
+| non-completed academic session, and a section that genuinely belongs to the class named
+| alongside it. A caller overriding one FK is responsible for the consistency of what it
+| overrides - the same posture admissionCreatePayload() takes for academic_session_id.
+|
+*/
+
+/**
+ * An ACTIVE student, eligible for enrollment. A thin wrapper over the Module 04 helper so a
+ * reader of an enrollment test does not have to know pupil() is where an eligible student
+ * comes from.
+ */
+function eligibleStudent(array $attributes = []): Student
+{
+    return pupil($attributes);
+}
+
+/**
+ * A session that is open for new placements: not COMPLETED. AcademicSession::factory()'s own
+ * default is UPCOMING, so this is a thin, self-documenting alias for it.
+ */
+function eligibleSession(): AcademicSession
+{
+    return AcademicSession::factory()->create();
+}
+
+/**
+ * A section whose whole hierarchy - its class, and that class's class level - is ACTIVE,
+ * matching the rule that a new enrollment may only be made into a fully active hierarchy.
+ * Section::factory()'s own default (and its class and class level factories in turn) is
+ * ACTIVE, so this is a thin, self-documenting alias for it.
+ */
+function activeSection(): Section
+{
+    return Section::factory()->create();
+}
+
+function enrollmentCreatePayload(array $overrides = []): array
+{
+    $section = activeSection();
+    $session = eligibleSession();
+
+    return array_merge([
+        'student_id' => eligibleStudent()->id,
+        'academic_session_id' => $session->id,
+        'school_class_id' => $section->school_class_id,
+        'section_id' => $section->id,
+        'enrollment_date' => $session->start_date->toDateString(),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT touches only these two fields.
+ */
+function enrollmentUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'enrollment_date' => now()->toDateString(),
+        'notes' => null,
+    ], $overrides);
+}
+
+/**
+ * An active enrollment, built through the factory rather than the API so a test about the API
+ * is not also testing record creation.
+ */
+function activeEnrollment(array $attributes = []): Enrollment
+{
+    $enrollment = Enrollment::factory()->create(array_filter([
+        'academic_session_id' => $attributes['academic_session_id'] ?? null,
+        'school_class_id' => $attributes['school_class_id'] ?? null,
+        'section_id' => $attributes['section_id'] ?? null,
+        'student_id' => $attributes['student_id'] ?? null,
+    ], fn (mixed $value): bool => ! is_null($value)));
+
+    $enrollment->forceFill(
+        collect($attributes)->except(['academic_session_id', 'school_class_id', 'section_id', 'student_id'])->all()
+    )->save();
+
+    return $enrollment->refresh();
+}
+
+/**
+ * An enrollment that has already ended (WITHDRAWN or CANCELLED) - built directly rather than
+ * through withdraw()/cancel(), so a test about those methods is not circularly dependent on
+ * the very transition it is testing.
+ */
+function decidedEnrollment(EnrollmentStatus $status, array $attributes = []): Enrollment
+{
+    $enrollment = activeEnrollment($attributes);
+
+    $enrollment->forceFill(['status' => $status, 'status_changed_at' => now()])->save();
+
+    return $enrollment->refresh();
 }
