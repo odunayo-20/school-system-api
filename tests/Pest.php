@@ -18,6 +18,7 @@ use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
 use App\Models\SchoolClass;
+use App\Models\Score;
 use App\Models\Section;
 use App\Models\Staff;
 use App\Models\Student;
@@ -735,4 +736,129 @@ function retiredAssessment(CatalogStatus $status, array $attributes = []): Asses
     $assessment->forceFill(['status' => $status])->save();
 
     return $assessment->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Score module helpers (Module 10)
+|--------------------------------------------------------------------------
+|
+| Unlike every FK pair before it, an assessment and an enrollment do not automatically agree
+| on class or session merely by both existing - ScoreService::assertContextMatches() requires
+| it explicitly. matchedScoreContext() is the one helper this module needs that none of Modules
+| 05-09 did: a school class, a class subject, a session and term, and an enrollment placed in
+| that SAME class and session, built together so a test that wants a genuinely valid score does
+| not have to wire five models by hand.
+|
+*/
+
+/**
+ * An assessment and an enrollment that agree on class and academic session - the exact
+ * alignment a score requires. Returned as a pair rather than a single opaque object, matching
+ * configuredSchool()'s own reasoning: a test asserts against the pieces, not a container.
+ *
+ * @return array{0: Assessment, 1: Enrollment}
+ */
+function matchedScoreContext(array $assessmentAttributes = [], array $enrollmentAttributes = []): array
+{
+    $class = selectableSchoolClass();
+    $classSubject = activeClassSubject(['school_class_id' => $class->id]);
+    $session = eligibleSession();
+    $term = Term::factory()->forSession($session, 1)->create();
+    $section = Section::factory()->within($class, 'A', 'A')->create();
+
+    $assessment = activeAssessment(array_merge([
+        'class_subject_id' => $classSubject->id,
+        'term_id' => $term->id,
+    ], $assessmentAttributes));
+
+    $enrollment = activeEnrollment(array_merge([
+        'school_class_id' => $class->id,
+        'section_id' => $section->id,
+        'academic_session_id' => $session->id,
+    ], $enrollmentAttributes));
+
+    return [$assessment, $enrollment];
+}
+
+/**
+ * A valid create payload, built from a freshly matched assessment/enrollment pair. A caller
+ * overriding assessment_id or enrollment_id is responsible for the consistency of what it
+ * overrides - the same posture assignmentCreatePayload() takes for its own foreign keys.
+ */
+function scoreCreatePayload(array $overrides = []): array
+{
+    [$assessment, $enrollment] = matchedScoreContext();
+
+    return array_merge([
+        'assessment_id' => $assessment->id,
+        'enrollment_id' => $enrollment->id,
+        'score' => 15,
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT touches only score and remarks - assessment_id and enrollment_id
+ * have no key to send at all, see UpdateScoreRequest.
+ */
+function scoreUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'score' => 18,
+        'remarks' => null,
+    ], $overrides);
+}
+
+/**
+ * A recorded score, built through the factory rather than the API so a test about the API is
+ * not also testing record creation. Its assessment and enrollment are NOT context-matched by
+ * default (ScoreFactory builds each independently) - tests that need a genuinely valid,
+ * scoreable context use matchedScoreContext() instead and build the Score from its pair.
+ */
+function recordedScore(array $attributes = []): Score
+{
+    return Score::factory()->create($attributes);
+}
+
+/**
+ * An actively employed TEACHING staff member with an ACTIVE assignment to the given class
+ * subject for the given session - eligible, under ScoreService's own scope, to enter or amend
+ * scores for assessments configured against it.
+ */
+function teacherAssignedTo(ClassSubject $classSubject, AcademicSession $session): Staff
+{
+    $teacher = eligibleTeacher();
+
+    TeacherAssignment::factory()
+        ->forTeacher($teacher)
+        ->forClassSubject($classSubject)
+        ->forSession($session)
+        ->create();
+
+    return $teacher;
+}
+
+/**
+ * $count enrollments, all placed in the SAME class and session as the given assessment - the
+ * shape a real class roster submission has. Returns plain enrollment ids, which is all a bulk
+ * payload needs.
+ *
+ * @return list<int>
+ */
+function rosterEnrollments(Assessment $assessment, int $count): array
+{
+    $class = $assessment->classSubject->schoolClass;
+    $session = $assessment->term->academicSession;
+
+    // matchedScoreContext() already places a section named 'A' on this class while building
+    // the assessment/enrollment pair, so reuse whatever section the class already has rather
+    // than colliding with it on the (school_class_id, code) unique index.
+    $section = Section::query()->where('school_class_id', $class->id)->first()
+        ?? Section::factory()->within($class, 'A', 'A')->create();
+
+    return collect(range(1, $count))->map(fn (): int => activeEnrollment([
+        'school_class_id' => $class->id,
+        'section_id' => $section->id,
+        'academic_session_id' => $session->id,
+    ])->id)->all();
 }

@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
+use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
 use App\Http\Controllers\Api\V1\Student\StudentController;
@@ -655,5 +656,52 @@ Route::middleware(['auth:api', 'active'])->prefix('assessments')->name('assessme
 
     Route::put('{assessment}', [AssessmentController::class, 'update'])
         ->middleware('permission:assessments.update')
+        ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Score management
+|--------------------------------------------------------------------------
+|
+| Module 10. What a specific student obtained against a specific configured assessment -
+| "Student 123, Mathematics CA 1, 17". References assessment_id + enrollment_id, NOT
+| student_id: a score belongs to the student's authoritative placement for the session the
+| assessment falls in, not merely to the person. See the scores migration.
+|
+| scores.* has NO delete endpoint. A score is the anchor a future grading/result module will
+| reference, the identical posture Module 06 through Module 09 take toward their own anchor
+| records. A mistaken mark is corrected through the ordinary PUT, not erased.
+|
+| Every read and write is ADDITIONALLY scoped by ScoreService to the acting user, on top of
+| this permission gate: a holder of scores.create is not thereby entitled to enter a score for
+| every class subject in the school if they are teaching staff - see ScoreService's own
+| docblock for the assignment-scoped check this project's flat permission model cannot express
+| on its own.
+|
+| POST /scores/bulk shares scores.create rather than a separate permission: recording many
+| students' marks for one assessment in one call is the same capability as recording one,
+| performed at the shape a class roster is actually entered in.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('scores')->name('scores.')->group(function (): void {
+    Route::get('/', [ScoreController::class, 'index'])
+        ->middleware('permission:scores.view')
+        ->name('index');
+
+    Route::post('/', [ScoreController::class, 'store'])
+        ->middleware('permission:scores.create')
+        ->name('store');
+
+    Route::post('bulk', [ScoreController::class, 'bulkStore'])
+        ->middleware('permission:scores.create')
+        ->name('bulk-store');
+
+    Route::get('{score}', [ScoreController::class, 'show'])
+        ->middleware('permission:scores.view')
+        ->name('show');
+
+    Route::put('{score}', [ScoreController::class, 'update'])
+        ->middleware('permission:scores.update')
         ->name('update');
 });
