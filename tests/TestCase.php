@@ -6,6 +6,7 @@ use Database\Seeders\AcademicPermissionSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\StaffPermissionSeeder;
+use Database\Seeders\StudentPermissionSeeder;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -15,14 +16,15 @@ abstract class TestCase extends BaseTestCase
      * every module implemented so far, so authorization assertions are made against a
      * known baseline.
      *
-     * All three permission seeders run, in the same order as DatabaseSeeder, and that
+     * All four permission seeders run, in the same order as DatabaseSeeder, and that
      * order is load-bearing. PermissionSeeder grants Module 01's permissions with sync(),
-     * which REPLACES each role's permission set; AcademicPermissionSeeder and
-     * StaffPermissionSeeder grant theirs with syncWithoutDetaching(), so running them
-     * afterwards adds to the set rather than replacing it. Seeded in the other order, the
-     * database would look correct and every Module 02 and Module 03 route would answer
-     * 403. That a test of the combined baseline depends on this is the point of seeding
-     * all three here rather than only the ones the test under way needs.
+     * which REPLACES each role's permission set; AcademicPermissionSeeder,
+     * StaffPermissionSeeder and StudentPermissionSeeder grant theirs with
+     * syncWithoutDetaching(), so running them afterwards adds to the set rather than
+     * replacing it. Seeded in the other order, the database would look correct and every
+     * Module 02, Module 03 and Module 04 route would answer 403. That a test of the
+     * combined baseline depends on this is the point of seeding all four here rather than
+     * only the ones the test under way needs.
      */
     protected function setUp(): void
     {
@@ -33,6 +35,7 @@ abstract class TestCase extends BaseTestCase
             PermissionSeeder::class,
             AcademicPermissionSeeder::class,
             StaffPermissionSeeder::class,
+            StudentPermissionSeeder::class,
         ]);
     }
 }

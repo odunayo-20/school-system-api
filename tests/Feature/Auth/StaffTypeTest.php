@@ -59,13 +59,17 @@ test('two staff users of different types can hold different permissions', functi
     Staff::factory()->create(['user_id' => $teaching->id, 'staff_type' => StaffType::TEACHING]);
     Staff::factory()->create(['user_id' => $nonTeaching->id, 'staff_type' => StaffType::NON_TEACHING]);
 
-    // Stands in for the Module that will own results.* / attendance.* permissions.
+    // Stands in for the Module that will own results.* / attendance.* permissions. The names
+    // are deliberately ones no module owns: this file originally borrowed "students.view",
+    // which was hypothetical when it was written and became Module 04's real, seeded
+    // permission. A placeholder that a later module adopts is a trap - the test would keep
+    // passing while quietly meaning something else.
     grantPermission($teaching, 'results.enter');
-    grantPermission($nonTeaching, 'students.view');
+    grantPermission($nonTeaching, 'attendance.record');
 
     expect($teaching->hasPermission('results.enter'))->toBeTrue()
-        ->and($teaching->hasPermission('students.view'))->toBeFalse()
-        ->and($nonTeaching->hasPermission('students.view'))->toBeTrue()
+        ->and($teaching->hasPermission('attendance.record'))->toBeFalse()
+        ->and($nonTeaching->hasPermission('attendance.record'))->toBeTrue()
         ->and($nonTeaching->hasPermission('results.enter'))->toBeFalse();
 });
 

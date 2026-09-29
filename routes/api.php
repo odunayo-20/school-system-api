@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
+use App\Http\Controllers\Api\V1\Student\StudentController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -300,4 +301,65 @@ Route::middleware(['auth:api', 'active'])->prefix('staff')->name('staff.')->grou
     Route::post('{staff}/deactivate', [StaffController::class, 'deactivate'])
         ->middleware('permission:staff.deactivate')
         ->name('deactivate');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Student management routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 04. Four routes: the roll can be read, a pupil added, a pupil read, and a pupil
+| amended. Everything else about the roll belongs to a module that has not been written yet.
+|
+| The permissions are seeded by StudentPermissionSeeder and need no code change to take
+| effect. They are PLURAL - students.view, students.create, students.update - following the
+| majority convention in this project (school.view, classes.*, terms.*) and matching the
+| "students.view" that Module 01 already used as its worked example. Module 03's staff.* is
+| the outlier and is left alone; see the audit's naming note.
+|
+| Four deliberate differences from the modules above, and each one is a refusal rather than
+| an omission:
+|
+|  - NO delete endpoint, and no students.delete permission. A pupil is a child. They do not
+|    leave the school by being erased from it, they leave by being marked WITHDRAWN or
+|    GRADUATED, and the record stays afterwards. Unlike Module 03, where the guard was "no
+|    dependents yet", the reasoning here holds no matter what arrives later.
+|
+|  - NO activate/deactivate endpoints, unlike staff. A pupil's lifecycle is one orthogonal
+|    question and it is amended through the same PUT as the name. Two extra routes and two
+|    extra permissions to correct a typo in a surname is a bad trade.
+|
+|  - PUT alone, following Module 03 rather than the academic routes' Route::match. The
+|    amend is a whole-record write, and one verb is one fewer thing for a client to try and
+|    mis-use.
+|
+|  - NO class, section or session filters on the index. A pupil's placement is an enrollment
+|    fact belonging to a future module, and the honest way to answer "who is in JSS 2 this
+|    session" is GET /api/v1/classes/{class}/students, not a filter over a roll that has no
+|    column to filter on.
+|
+| Note what creating a pupil does NOT do: it does not create a login. There is no
+| email/password input and no account is provisioned, so a pupil created here has
+| account_status = null until the portal module links one. Pupils outnumber staff and
+| identity does not require a login, so making an account a precondition of recording a
+| child would have made this module unusable for exactly the pupils most likely to need it.
+|
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('students')->name('students.')->group(function (): void {
+    Route::get('/', [StudentController::class, 'index'])
+        ->middleware('permission:students.view')
+        ->name('index');
+
+    Route::post('/', [StudentController::class, 'store'])
+        ->middleware('permission:students.create')
+        ->name('store');
+
+    Route::get('{student}', [StudentController::class, 'show'])
+        ->middleware('permission:students.view')
+        ->name('show');
+
+    Route::put('{student}', [StudentController::class, 'update'])
+        ->middleware('permission:students.update')
+        ->name('update');
 });

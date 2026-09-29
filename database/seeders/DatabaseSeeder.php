@@ -25,6 +25,11 @@ class DatabaseSeeder extends Seeder
      * Nothing else in this project observes model events, so suppressing them buys no
      * performance and only risks that class of drift. Model events are therefore left
      * enabled, which keeps the invariant in the model where it cannot be forgotten.
+     *
+     * StudentSeeder runs after AcademicStructureSeeder only for readability - it does not
+     * read any academic table, because a pupil's placement is an enrollment fact and this
+     * module deliberately has no column to put it in. The order that actually matters is the
+     * permission seeders, above.
      */
     public function run(): void
     {
@@ -39,10 +44,12 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             AcademicPermissionSeeder::class,
             StaffPermissionSeeder::class,
+            StudentPermissionSeeder::class,
             SchoolSeeder::class,
             AcademicStructureSeeder::class,
             AcademicCalendarSeeder::class,
             StaffSeeder::class,
+            StudentSeeder::class,
             SuperAdminSeeder::class,
         ]);
     }

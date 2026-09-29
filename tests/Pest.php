@@ -2,11 +2,13 @@
 
 use App\Enums\Role;
 use App\Enums\StaffType;
+use App\Enums\UserStatus;
 use App\Models\AcademicSession;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
 use App\Models\Staff;
+use App\Models\Student;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -89,7 +91,11 @@ function registerAuthorizationTestRoutes(): void
     Route::middleware(['auth:api', 'active', 'permission:users.create'])
         ->post('/_test/permission-gated', fn () => response()->json(['ok' => true]));
 
-    Route::middleware(['auth:api', 'active', 'permission:students.view'])
+    // A permission no module owns, so this route stands in for a future module's. It was
+    // originally gated on "students.view" back when that was hypothetical; Module 04 made
+    // it real and seeded it to REGISTRAR, so the test using this route now gates on a name
+    // no seeder will ever create. The route name and the test must be changed together.
+    Route::middleware(['auth:api', 'active', 'permission:graduation_records.view'])
         ->get('/_test/future-permission', fn () => response()->json(['ok' => true]));
 
     Route::middleware(['auth:api', 'active', 'verified'])
@@ -246,4 +252,70 @@ function staffMember(?StaffType $staffType = null, array $staffAttributes = []):
     $staff->forceFill($staffAttributes)->save();
 
     return $staff->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Student module helpers (Module 04)
+|--------------------------------------------------------------------------
+|
+| A valid create payload, so each test states only the field it is actually about.
+|
+| Note how much smaller this is than staffCreatePayload(). That difference is the module:
+| there are no credentials here, because creating a pupil does not create a login, and no
+| staff_type because "TEACHING" is a fact about a job and not about a child.
+|
+*/
+
+function studentCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so first_name is always present unless
+ * a test is deliberately omitting it.
+ */
+function studentUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+    ], $overrides);
+}
+
+/**
+ * A pupil record with no login account, built through the factory rather than the API so a
+ * test about the API is not also testing record creation.
+ *
+ * user_id is null, which is the common case and the reason the column is nullable.
+ */
+function pupil(array $studentAttributes = []): Student
+{
+    $student = Student::factory()->create();
+
+    $student->forceFill($studentAttributes)->save();
+
+    return $student->refresh();
+}
+
+/**
+ * A pupil WITH a portal account, for the resource and relationship tests.
+ *
+ * The account's UserStatus is deliberately not coupled to the pupil's roll status: one is who
+ * can log in, the other is who is on the roll, and a test that set both would be asserting
+ * that the two are the same question.
+ */
+function pupilWithAccount(?UserStatus $accountStatus = null): Student
+{
+    $student = Student::factory()->withAccount()->create();
+
+    if ($accountStatus !== null) {
+        $student->user->forceFill(['status' => $accountStatus])->save();
+    }
+
+    return $student->refresh();
 }

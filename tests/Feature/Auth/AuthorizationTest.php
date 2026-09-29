@@ -88,13 +88,23 @@ test('the super admin bypass is centralised in the gate', function () {
 });
 
 test('a permission seeded by a later module is enforced without any code change', function () {
+    // A name that no module owns. This test originally used "students.view" as a stand-in
+    // for a permission that did not exist yet, which was a good choice at the time and
+    // stopped being one in Module 04: students.view is now a real, seeded permission that
+    // REGISTRAR legitimately holds, so the opening assertion below began failing with a
+    // 200. The property under test is that the Gate resolves whatever the database says,
+    // with no code change, so any name works as long as it is genuinely unheld - and the
+    // failure mode of reusing a real one is silent, since a future module's seeder starts
+    // looking like a broken test.
+    $name = 'graduation_records.view';
+
     $registrar = userWithRole(Role::REGISTRAR);
 
     Sanctum::actingAs($registrar, ['*'], 'api');
     $this->getJson('/_test/future-permission')->assertForbidden();
 
     // A future module seeds its own permission and attaches it to a role.
-    $permission = Permission::query()->create(['name' => 'students.view', 'label' => 'View students']);
+    $permission = Permission::query()->create(['name' => $name, 'label' => 'View graduation records']);
     $registrar->role->permissions()->attach($permission);
 
     $registrar->unsetRelation('role');

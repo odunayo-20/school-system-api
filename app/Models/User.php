@@ -87,6 +87,21 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * The pupil record behind this login, if this account is a pupil's portal account.
+     *
+     * Module 04 creates the relationship and the nullable column behind it, but exposes no
+     * way to populate either: a pupil does not need a login to exist, so the link is
+     * reserved for the portal module rather than being offered here as a field nobody can
+     * set. See the students migration.
+     *
+     * @return HasOne<Student, $this>
+     */
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class);
+    }
+
+    /**
      * Permissions granted directly to this user, in addition to those inherited
      * from their role. This is what allows two STAFF users to hold different
      * permissions without inventing extra authentication roles.

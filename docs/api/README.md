@@ -8,6 +8,7 @@ permissions, and the client-side checklist.
 | 01 | [authentication.md](authentication.md) | Login, logout, `me`, email verification, password reset, roles and permissions, the user resource |
 | 02 | [school-configuration.md](school-configuration.md) | School profile, academic sessions, terms, academic context, class levels, classes, sections |
 | 03 | [staff-management.md](staff-management.md) | Staff listing and search, creating a staff record with its login account, employment status, terminating an employment |
+| 04 | [student-management.md](student-management.md) | The pupil roll: creating a pupil with no login, derived student numbers, roll status, why a pupil is never deleted |
 
 ## Shared across modules
 
@@ -43,9 +44,17 @@ A later module depends on Module 02's academic state, so deploy in this order:
 1. **01** - authentication and authorization
 2. **02** - school profile, academic year, class structure
 3. **03** - staff establishment
+4. **04** - the pupil roll
 
-The Super Admin account, the school profile and the development staff records are created by
-seeders, not by the API: there is no `POST /auth/register` and no `POST /school`, because the
-school is a singleton and accounts are provisioned by an administrator. `POST /staff` does
-create an account, because a staff record and its login are one indivisible fact - see
-[staff-management.md](staff-management.md) §3.2.
+Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
+pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
+needs nothing from Module 02 in order to be correct.
+
+The Super Admin account, the school profile and the development staff and pupil records are
+created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,
+because the school is a singleton and accounts are provisioned by an administrator.
+
+`POST /staff` does create an account, because a staff record and its login are one
+indivisible fact - see [staff-management.md](staff-management.md) §3.2. `POST /students` does
+**not**, and that asymmetry is deliberate rather than a missing feature: a pupil does not need
+a login to exist - see [student-management.md](student-management.md) §3.1.
