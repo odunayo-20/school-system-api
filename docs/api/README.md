@@ -17,6 +17,7 @@ permissions, and the client-side checklist.
 | 10 | [score-management.md](score-management.md) | Recording what a student obtained against a configured assessment, single or bulk, the enrollment (not student) relationship, live max-score validation, and the teacher-assignment scope that restricts every read and write |
 | 11 | [grading.md](grading.md) | Class-level-scoped grading scales and their percentage bands, inclusive boundary rules, overlap/gap handling, and the read-only percentage-to-grade calculation operation |
 | 12 | [result-compilation.md](result-compilation.md) | Compiling raw assessment scores into a subject result for one enrollment, class subject and term - the weighting rules, the missing-scores policy, idempotent recompilation, and why there is no create/update/delete endpoint |
+| 13 | [result-approval-publication.md](result-approval-publication.md) | The result lifecycle from COMPILED through SUBMITTED, APPROVED, PUBLISHED to the terminal LOCKED state - workflow permissions, structural separation of duties, and why compilation is refused past COMPILED |
 
 ## Shared across modules
 
@@ -61,6 +62,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 10. **10** - score management
 11. **11** - grading
 12. **12** - result compilation
+13. **13** - result approval & publication
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -111,6 +113,12 @@ through) - not on Module 03, 04, 05, 07 or 08 directly, though it reuses Module 
 teacher-assignment scoping technique. It is the first module to require three foreign keys at
 once (`enrollment_id`, `class_subject_id`, `term_id`), none derivable from either of the other
 two. See [result-compilation.md](result-compilation.md) §0.
+
+Module 13 depends on Module 12 only (the result it moves through its own workflow) - not on
+Module 03 through 11 directly, though `submit()` reuses Module 08's teacher-assignment scoping
+technique exactly as Module 12 already does for `compile()`. It adds no new table: the
+workflow lives entirely on `results.status`, the same column Module 12 introduced. See
+[result-approval-publication.md](result-approval-publication.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,

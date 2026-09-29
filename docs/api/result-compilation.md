@@ -3,9 +3,11 @@
 Turning raw assessment scores into a compiled subject result.
 
 Module 12. Four endpoints, one table, and one deliberate restriction: **this module compiles
-one student's one-subject result for one term - it never approves, publishes, prints a report
-card, promotes a student, exposes anything to a student's own login, or computes a cross-subject
-aggregate (an overall term average, a class position).**
+one student's one-subject result for one term - it never prints a report card, promotes a
+student, exposes anything to a student's own login, or computes a cross-subject aggregate (an
+overall term average, a class position).** The result's own approval/publication workflow
+(Module 13) is documented separately - see
+[result-approval-publication.md](result-approval-publication.md).
 
 - [0. Read this first: what a result is, and what this module does not do](#0-read-this-first-what-a-result-is-and-what-this-module-does-not-do)
 - [1. Conventions](#1-conventions)
@@ -47,11 +49,11 @@ that produced it.** `Score` remains the sole authoritative raw input. A client w
 behind a result calls `GET /scores` with the same `enrollment_id`, `subject_id` and `term_id`
 filters Module 10 already exposes, rather than this module duplicating that data.
 
-**This module does not implement Result Approval, Result Publication, Report Cards, Promotion,
-a Result Checker for students, Attendance, Timetable, or Notifications.** A compiled result is
-working data for teachers and administrators only; every one of those is a later module. The
-only hook this module leaves for them is `status: LOCKED`, checked before every recompile and
-otherwise unused today - see §4.4.
+**This module does not implement Report Cards, Promotion, a Result Checker for students,
+Attendance, Timetable, or Notifications.** A compiled result is working data for teachers and
+administrators until Module 13 moves it through its own approval/publication workflow; every
+one of the items above remains a later module. See §4.4 for `status: LOCKED` and
+[result-approval-publication.md](result-approval-publication.md) for the workflow itself.
 
 ---
 
@@ -90,6 +92,14 @@ compiled result - so the status code does not depend on which happened underneat
     "grade_point": "5.00",
     "remark": "Excellent",
     "status": "COMPILED",
+    "submitted_by": null,
+    "submitted_at": null,
+    "approved_by": null,
+    "approved_at": null,
+    "published_by": null,
+    "published_at": null,
+    "locked_by": null,
+    "locked_at": null,
     "created_at": "2026-10-06T09:00:00+00:00",
     "updated_at": "2026-10-06T09:00:00+00:00"
   },
@@ -110,6 +120,12 @@ copied through unchanged - this module implements no grading letters, GPA compil
 report-card logic of its own. All three are `null` together whenever `status` is
 `INCOMPLETE`, or no grading scale is configured for the enrollment's class level, or the
 percentage falls in a gap no band covers.
+
+`submitted_by`/`approved_by`/`published_by`/`locked_by` (each a small `{id, name}` actor, never
+the full user record) and their paired `_at` timestamps are Module 13's own workflow metadata,
+documented in full in
+[result-approval-publication.md](result-approval-publication.md). All eight stay `null` until
+their own transition happens.
 
 ---
 
@@ -136,7 +152,7 @@ All four require an active bearer token (`auth:api` + `active`).
 | `section_id` | integer | Filters through the enrollment |
 | `subject_id` | integer | Filters through the class subject |
 | `academic_session_id` | integer | Filters through the enrollment |
-| `status` | `INCOMPLETE`, `COMPILED`, `LOCKED` | |
+| `status` | `INCOMPLETE`, `COMPILED`, `SUBMITTED`, `APPROVED`, `PUBLISHED`, `LOCKED` | See [result-approval-publication.md](result-approval-publication.md) for the last four |
 | `per_page` | 1-100, default 15 | |
 
 There is no `search` - a result holds no text field of its own; `?search=` is **422**, not
@@ -258,11 +274,13 @@ backstop for two concurrent first-time compiles of the same triple; row-level lo
 transaction serializes two concurrent recompiles of an already-existing result. A duplicate row
 for the same triple is never produced by any path.
 
-### 4.4 `status: "LOCKED"`
+### 4.4 Recompiling past `COMPILED`
 
-Not produced by this module - there is no endpoint that sets it. It exists purely as the
-minimum hook a future Result Approval/Publication module needs: `POST /results/compile` and
-`POST /results/bulk` both refuse to recompile a result already `LOCKED`, with **422**.
+`POST /results/compile` and `POST /results/bulk` both refuse to recompile a result once it has
+left this module's own two states (`INCOMPLETE`/`COMPILED`) - that is, once Module 13's
+workflow has moved it to `SUBMITTED`, `APPROVED`, `PUBLISHED` or `LOCKED` - with **422**. This
+module produces only `INCOMPLETE` and `COMPILED`; every other status, and the guard itself, is
+Module 13's - see [result-approval-publication.md](result-approval-publication.md) §4.
 
 ### 4.5 Enrollment need not be `ACTIVE`
 
@@ -316,6 +334,10 @@ subject outside a teacher's own assignments returns an empty list, never someone
 **A student holds nothing over results in this module.** Raw compiled results, ahead of any
 approval or publication, are working data for teachers and administrators; student-facing
 access belongs to a future Result Checker module.
+
+**`results.submit`/`.approve`/`.publish`/`.lock`** gate Module 13's own workflow endpoints and
+are documented in full in
+[result-approval-publication.md](result-approval-publication.md) §5 - not repeated here.
 
 ---
 

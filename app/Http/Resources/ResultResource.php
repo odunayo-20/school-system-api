@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Http\Resources\Academic\TermResource;
 use App\Models\Result;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,6 +25,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * This module does NOT implement grading letters, GPA compilation or report cards - grade,
  * grade_point and remark here are simply whatever Module 11's grading scale resolved, copied
  * through unchanged.
+ *
+ * Since Module 13, also the approval/publication workflow: submitted/approved/published/locked,
+ * each a small {id, name} actor projection - never the full UserResource, which would leak an
+ * approver's email and permission list to everyone who can merely view the result they acted
+ * on. All four stay null until their own transition happens; see ResultService.
  *
  * @mixin Result
  */
@@ -47,8 +53,25 @@ class ResultResource extends JsonResource
             'remark' => $this->remark,
             'status' => $this->status->value,
 
+            'submitted_by' => $this->whenLoaded('submittedBy', fn () => $this->actor($this->submittedBy)),
+            'submitted_at' => $this->submitted_at?->toIso8601String(),
+            'approved_by' => $this->whenLoaded('approvedBy', fn () => $this->actor($this->approvedBy)),
+            'approved_at' => $this->approved_at?->toIso8601String(),
+            'published_by' => $this->whenLoaded('publishedBy', fn () => $this->actor($this->publishedBy)),
+            'published_at' => $this->published_at?->toIso8601String(),
+            'locked_by' => $this->whenLoaded('lockedBy', fn () => $this->actor($this->lockedBy)),
+            'locked_at' => $this->locked_at?->toIso8601String(),
+
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * @return array{id: int, name: string}|null
+     */
+    protected function actor(?User $user): ?array
+    {
+        return $user ? ['id' => $user->id, 'name' => $user->name] : null;
     }
 }

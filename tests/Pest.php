@@ -990,3 +990,38 @@ function compiledResult(?User $actor = null): Result
         'term_id' => $assessment->term_id,
     ], $actor);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Result approval/publication workflow helpers (Module 13)
+|--------------------------------------------------------------------------
+|
+| Each state is built through the SERVICE's own transition, chained from the one before it,
+| rather than assembled directly on ResultFactory - the identical reasoning compiledResult()
+| already gives: a test asserting against a SUBMITTED/APPROVED/PUBLISHED/LOCKED result should
+| exercise the real path that produces one, including its real enrollment/class-subject/term
+| relations, not a shape hand-built to merely look right. The actor for each individual
+| transition defaults to an ADMIN (unrestricted, so no teacher assignment is required to reach
+| a given state) unless a test names one, matching compiledResult()'s own default.
+|
+*/
+
+function submittedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->submit(compiledResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function approvedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->approve(submittedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function publishedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->publish(approvedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+function lockedResult(?User $actor = null): Result
+{
+    return app(ResultService::class)->lock(publishedResult(), $actor ?? userWithRole(Role::ADMIN));
+}

@@ -7,6 +7,7 @@ use App\Models\ClassSubject;
 use App\Models\Enrollment;
 use App\Models\Result;
 use App\Models\Term;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -78,10 +79,45 @@ class ResultFactory extends Factory
         ]);
     }
 
-    public function locked(): static
+    /**
+     * Each workflow state below is independent, not chained through the ones before it - a
+     * test asserting "approve requires SUBMITTED" needs a result THAT status, not a fully
+     * reconstructed submitted-then-approved history it does not care about. A test that DOES
+     * care about the earlier actors/timestamps sets them explicitly via ->state([...]).
+     */
+    public function submitted(?User $actor = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => ResultStatus::SUBMITTED,
+            'submitted_by' => $actor?->id,
+            'submitted_at' => now(),
+        ]);
+    }
+
+    public function approved(?User $actor = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => ResultStatus::APPROVED,
+            'approved_by' => $actor?->id,
+            'approved_at' => now(),
+        ]);
+    }
+
+    public function published(?User $actor = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => ResultStatus::PUBLISHED,
+            'published_by' => $actor?->id,
+            'published_at' => now(),
+        ]);
+    }
+
+    public function locked(?User $actor = null): static
     {
         return $this->state(fn (array $attributes): array => [
             'status' => ResultStatus::LOCKED,
+            'locked_by' => $actor?->id,
+            'locked_at' => now(),
         ]);
     }
 }

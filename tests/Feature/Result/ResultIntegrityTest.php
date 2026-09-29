@@ -100,7 +100,36 @@ it('refuses to compile over a locked result at the service layer, not only throu
         'enrollment_id' => $enrollment->id,
         'class_subject_id' => $assessment->class_subject_id,
         'term_id' => $assessment->term_id,
-    ], $admin))->toThrow(BusinessRuleViolation::class, 'This result has been locked and can no longer be recompiled.');
+    ], $admin))->toThrow(
+        BusinessRuleViolation::class,
+        'This result is LOCKED and has already entered the approval workflow, so it can no longer be recompiled.'
+    );
+});
+
+it('refuses to compile over a submitted result at the service layer - the workflow guard, not only LOCKED', function (): void {
+    // Module 13 extends this guard from "LOCKED only" to "anything past COMPILED" - see
+    // ResultStatus::isRecompilable(). Pinned separately from the LOCKED case above because it
+    // is a materially different boundary: SUBMITTED is not terminal, yet must still refuse a
+    // silent recompile once a human has acted on the result.
+    $admin = userWithRole(Role::ADMIN);
+    $service = app(ResultService::class);
+    [$assessment, $enrollment] = resultCompilationContext();
+
+    Result::factory()
+        ->forEnrollment($enrollment)
+        ->forClassSubject($assessment->classSubject)
+        ->forTerm($assessment->term)
+        ->submitted()
+        ->create();
+
+    expect(fn () => $service->compile([
+        'enrollment_id' => $enrollment->id,
+        'class_subject_id' => $assessment->class_subject_id,
+        'term_id' => $assessment->term_id,
+    ], $admin))->toThrow(
+        BusinessRuleViolation::class,
+        'This result is SUBMITTED and has already entered the approval workflow, so it can no longer be recompiled.'
+    );
 });
 
 it('refuses to delete an enrollment that a result still references', function (): void {

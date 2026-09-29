@@ -28,7 +28,12 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Compiling raw assessment scores into a subject result: one enrollment, one class subject,
- * one term.
+ * one term. Since Module 13, also that result's approval/publication workflow -
+ * submit()/approve()/publish()/lock(), taking it from COMPILED through SUBMITTED, APPROVED and
+ * PUBLISHED to the terminal, immutable LOCKED - kept on this same service rather than a new
+ * one, because a workflow transition is not a distinct domain from compiling the thing it
+ * transitions; it is the next chapter of the same record's lifecycle, and the two share the
+ * one calculation path, the one teacher-scope check and the one recompile guard below.
  *
  * There is exactly ONE calculation path, here, in calculateOutcome() and its two private
  * helpers - never duplicated in the controller, the resource, or anywhere else, per this
@@ -44,6 +49,14 @@ use Illuminate\Support\Facades\DB;
  * deliberately re-implemented here rather than shared through a trait: it is three lines, and
  * every module since TeacherAssignment keeps its own copy of a check this size rather than
  * extracting one for two callers.
+ *
+ * WORKFLOW TRANSITIONS ARE NOT IDEMPOTENT, matching AdmissionService::assertPending() and
+ * TeacherAssignmentService::assertActive()'s identical established posture: repeating a
+ * transition, or attempting one out of order, is refused with a clear 422 naming the result's
+ * actual status - never silently treated as a no-op success. See assertStatus().
+ *
+ * THIS MODULE DOES NOT EXPOSE A PUBLIC RESULT-CHECKING ENDPOINT and does not implement a
+ * reject/reverse transition. See the Module 13 audit for why both were deliberately left out.
  */
 class ResultService
 {
@@ -51,7 +64,9 @@ class ResultService
 
     /**
      * Every relation the resource needs, loaded once here rather than per row - the same
-     * eager-loading discipline every prior module's service already follows.
+     * eager-loading discipline every prior module's service already follows. The four "_by"
+     * relations are cheap (a single, already-indexed belongsTo each) and loaded unconditionally
+     * so a freshly compiled result's still-null submitted_by/etc. costs nothing extra to render.
      *
      * @var list<string>
      */
@@ -63,6 +78,10 @@ class ResultService
         'classSubject.schoolClass',
         'classSubject.subject',
         'term.academicSession',
+        'submittedBy',
+        'approvedBy',
+        'publishedBy',
+        'lockedBy',
     ];
 
     /**
@@ -233,6 +252,123 @@ class ResultService
     }
 
     /**
+     * Submit a compiled result for approval. Only reachable from COMPILED - see
+     * assertStatus(). The same teacher-scope check compile() applies: a STAFF member may
+     * submit only a result for a class subject they hold an ACTIVE TeacherAssignment for, for
+     * the term's own academic session; ADMIN/REGISTRAR/SUPER_ADMIN are unrestricted, matching
+     * every other action in this service.
+     */
+    public function submit(Result $result, User $user): Result
+    {
+        $this->assertTeacherAuthorized($user, $result->class_subject_id, $result->term->academic_session_id);
+
+        return $this->transition(
+            $result,
+            expected: ResultStatus::COMPILED,
+            next: ResultStatus::SUBMITTED,
+            metadata: ['submitted_by' => $user->id, 'submitted_at' => now()],
+            verb: 'submitted',
+        );
+    }
+
+    /**
+     * Approve a submitted result. Only reachable from SUBMITTED. No teacher-scope check here:
+     * only SUPER_ADMIN and ADMIN hold results.approve at all (see ResultPermissionSeeder) - the
+     * structural separation of duties this module relies on, since neither STAFF nor REGISTRAR
+     * can ever approve a result, whether or not they submitted it. See the Module 13 audit §7
+     * for why a same-user "you cannot approve your own submission" check was considered and
+     * rejected in favour of this simpler, role-level guarantee.
+     */
+    public function approve(Result $result, User $user): Result
+    {
+        return $this->transition(
+            $result,
+            expected: ResultStatus::SUBMITTED,
+            next: ResultStatus::APPROVED,
+            metadata: ['approved_by' => $user->id, 'approved_at' => now()],
+            verb: 'approved',
+        );
+    }
+
+    /**
+     * Publish an approved result - the hand-off point a future Result Checker module (Module
+     * 16) will read from. Only reachable from APPROVED. This module does not itself expose any
+     * public result-checking endpoint.
+     */
+    public function publish(Result $result, User $user): Result
+    {
+        return $this->transition(
+            $result,
+            expected: ResultStatus::APPROVED,
+            next: ResultStatus::PUBLISHED,
+            metadata: ['published_by' => $user->id, 'published_at' => now()],
+            verb: 'published',
+        );
+    }
+
+    /**
+     * Lock a published result. Terminal: once LOCKED, persist() refuses every future recompile
+     * (see isRecompilable()) and this service exposes no further transition out of it.
+     */
+    public function lock(Result $result, User $user): Result
+    {
+        return $this->transition(
+            $result,
+            expected: ResultStatus::PUBLISHED,
+            next: ResultStatus::LOCKED,
+            metadata: ['locked_by' => $user->id, 'locked_at' => now()],
+            verb: 'locked',
+        );
+    }
+
+    /**
+     * The one place every workflow transition applies its precondition and writes its outcome,
+     * so submit()/approve()/publish()/lock() cannot drift into four different answers to "is
+     * this move actually legal right now". Row-locked inside a transaction, exactly like
+     * persist()'s own concurrency guarantee: two simultaneous requests to approve the same
+     * result serialize on the lock, and the second sees the already-APPROVED status and is
+     * refused by assertStatus() rather than double-applying the transition.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    protected function transition(Result $result, ResultStatus $expected, ResultStatus $next, array $metadata, string $verb): Result
+    {
+        return DB::transaction(function () use ($result, $expected, $next, $metadata, $verb): Result {
+            /** @var Result $locked */
+            $locked = Result::query()->whereKey($result->id)->lockForUpdate()->firstOrFail();
+
+            $this->assertStatus($locked, $expected, $verb);
+
+            $locked->forceFill([...$metadata, 'status' => $next])->save();
+
+            return $locked->load(self::WITH);
+        });
+    }
+
+    /**
+     * Not idempotent, matching AdmissionService::assertPending() and
+     * TeacherAssignmentService::assertActive()'s identical posture: a workflow transition is a
+     * one-shot event, so repeating one, or attempting one out of order, is refused rather than
+     * treated as a no-op success.
+     */
+    protected function assertStatus(Result $result, ResultStatus $expected, string $verb): void
+    {
+        if ($result->status === $expected) {
+            return;
+        }
+
+        if ($result->status === ResultStatus::INCOMPLETE && $expected === ResultStatus::COMPILED) {
+            throw new BusinessRuleViolation(
+                'This result is INCOMPLETE - not every assessment has a score yet - so it cannot be submitted.'
+            );
+        }
+
+        throw new BusinessRuleViolation(
+            "This result is {$result->status->value}, so it cannot be {$verb}. It must be {$expected->value} first."
+        );
+    }
+
+    /**
      * The one calculation path, wrapped in the idempotent upsert every compile (single or
      * bulk) goes through.
      *
@@ -255,9 +391,9 @@ class ResultService
                     ->lockForUpdate()
                     ->first() ?? new Result;
 
-                if ($result->exists && $result->isLocked()) {
+                if ($result->exists && ! $result->status->isRecompilable()) {
                     throw new BusinessRuleViolation(
-                        'This result has been locked and can no longer be recompiled.'
+                        "This result is {$result->status->value} and has already entered the approval workflow, so it can no longer be recompiled."
                     );
                 }
 

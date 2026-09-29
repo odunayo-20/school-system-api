@@ -70,7 +70,10 @@ it('requires a specific permission per action rather than one blanket grant', fu
 it('seeds the permissions this module owns and no others', function (): void {
     $names = Permission::query()->where('name', 'like', 'results.%')->pluck('name')->all();
 
-    expect($names)->toEqualCanonicalizing(['results.view', 'results.compile']);
+    expect($names)->toEqualCanonicalizing([
+        'results.view', 'results.compile', 'results.submit',
+        'results.approve', 'results.publish', 'results.lock',
+    ]);
 });
 
 it('adds the module permissions without revoking the earlier modules', function (): void {

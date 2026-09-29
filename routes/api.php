@@ -753,7 +753,7 @@ Route::middleware(['auth:api', 'active'])->prefix('grading-scales')->name('gradi
 
 /*
 |--------------------------------------------------------------------------
-| Result compilation
+| Result compilation, approval and publication
 |--------------------------------------------------------------------------
 |
 | Module 12. The compiled academic outcome for one student's enrollment, in one class
@@ -763,12 +763,19 @@ Route::middleware(['auth:api', 'active'])->prefix('grading-scales')->name('gradi
 | parent Result plus child ResultItem rows.
 |
 | results.* has NO delete endpoint and no plain store()/update() - a result is written only
-| through compile()/bulk, a calculation over authoritative data, never a raw create or amend
-| of client-supplied values. Recompiling (the identical operation, run again after a score
-| correction) is how an existing result changes.
+| through compile()/bulk and the four workflow actions below, never a raw create or amend of
+| client-supplied values. Recompiling (the identical compile operation, run again after a
+| score correction) is how a COMPILED-or-earlier result changes; once submitted, it can only
+| move forward through the workflow - see ResultService::persist()/isRecompilable().
 |
 | POST /results/bulk shares results.compile rather than a separate permission: compiling a
 | whole class subject's results in one call is the same capability as compiling one student's.
+|
+| Module 13 adds the linear workflow COMPILED -> SUBMITTED -> APPROVED -> PUBLISHED -> LOCKED,
+| as four POST .../{action} routes - the identical shape Module 06's enrollments/{id}/withdraw
+| and Module 08's teacher-assignments/{id}/end|cancel already use for a state transition, each
+| gated on its OWN permission rather than reusing results.compile. None accepts a request body:
+| the server alone determines the next state, never a client-supplied "status".
 */
 
 Route::middleware(['auth:api', 'active'])->prefix('results')->name('results.')->group(function (): void {
@@ -787,4 +794,20 @@ Route::middleware(['auth:api', 'active'])->prefix('results')->name('results.')->
     Route::get('{result}', [ResultController::class, 'show'])
         ->middleware('permission:results.view')
         ->name('show');
+
+    Route::post('{result}/submit', [ResultController::class, 'submit'])
+        ->middleware('permission:results.submit')
+        ->name('submit');
+
+    Route::post('{result}/approve', [ResultController::class, 'approve'])
+        ->middleware('permission:results.approve')
+        ->name('approve');
+
+    Route::post('{result}/publish', [ResultController::class, 'publish'])
+        ->middleware('permission:results.publish')
+        ->name('publish');
+
+    Route::post('{result}/lock', [ResultController::class, 'lock'])
+        ->middleware('permission:results.lock')
+        ->name('lock');
 });

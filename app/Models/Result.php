@@ -8,14 +8,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * The compiled academic outcome for one student's enrollment, in one class subject, for one
- * term.
+ * term - and, since Module 13, its own approval/publication workflow
+ * (COMPILED → SUBMITTED → APPROVED → PUBLISHED → LOCKED).
  *
- * NOT a Score (the raw input) and NOT a future Result Approval/Publication/Report Card record
- * - see the results migration for the full reasoning, in particular why this row references
- * enrollment_id rather than student_id.
+ * NOT a Score (the raw input) and NOT a Report Card - see the results migration for the full
+ * reasoning, in particular why this row references enrollment_id rather than student_id.
  *
  * enrollment_id, class_subject_id and term_id are absent from $fillable-driven amends after
  * creation: ResultService::compile() sets them once via forceFill(), and no amend ever reaches
@@ -33,6 +34,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $grade_point
  * @property string|null $remark
  * @property ResultStatus $status
+ * @property int|null $submitted_by
+ * @property Carbon|null $submitted_at
+ * @property int|null $approved_by
+ * @property Carbon|null $approved_at
+ * @property int|null $published_by
+ * @property Carbon|null $published_at
+ * @property int|null $locked_by
+ * @property Carbon|null $locked_at
  */
 class Result extends Model
 {
@@ -59,6 +68,10 @@ class Result extends Model
             'percentage' => 'decimal:2',
             'grade_point' => 'decimal:2',
             'status' => ResultStatus::class,
+            'submitted_at' => 'datetime',
+            'approved_at' => 'datetime',
+            'published_at' => 'datetime',
+            'locked_at' => 'datetime',
         ];
     }
 
@@ -84,6 +97,42 @@ class Result extends Model
     public function term(): BelongsTo
     {
         return $this->belongsTo(Term::class);
+    }
+
+    /**
+     * Who performed each forward workflow transition (Module 13) - all four nullable, since a
+     * freshly compiled result has been through none of them yet. See ResultService for the
+     * one place each is ever set.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function publishedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'published_by');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function lockedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'locked_by');
     }
 
     public function isLocked(): bool
