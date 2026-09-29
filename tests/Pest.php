@@ -4,6 +4,7 @@ use App\Enums\AdmissionStatus;
 use App\Enums\EnrollmentStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
+use App\Enums\TeacherAssignmentStatus;
 use App\Enums\UserStatus;
 use App\Models\AcademicSession;
 use App\Models\Admission;
@@ -18,6 +19,7 @@ use App\Models\Section;
 use App\Models\Staff;
 use App\Models\Student;
 use App\Models\Subject;
+use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -579,4 +581,58 @@ function classSubjectCreatePayload(array $overrides = []): array
 function activeClassSubject(array $attributes = []): ClassSubject
 {
     return ClassSubject::factory()->create($attributes);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Teacher assignment module helpers (Module 08)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: a TEACHING, actively
+| employed staff member, an active class subject whose whole hierarchy is active, and a
+| non-completed academic session - the same posture enrollmentCreatePayload() and
+| classSubjectCreatePayload() take for their own foreign keys.
+|
+*/
+
+/**
+ * An actively employed TEACHING staff member, eligible to be assigned. A thin wrapper over
+ * the Module 03 helper so a reader of an assignment test does not have to know staffMember()
+ * is where an eligible teacher comes from.
+ */
+function eligibleTeacher(array $staffAttributes = []): Staff
+{
+    return staffMember(StaffType::TEACHING, $staffAttributes);
+}
+
+function assignmentCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'teaching_staff_id' => eligibleTeacher()->id,
+        'class_subject_id' => activeClassSubject()->id,
+        'academic_session_id' => eligibleSession()->id,
+    ], $overrides);
+}
+
+/**
+ * An active teacher assignment, built through the factory rather than the API so a test
+ * about the API is not also testing record creation.
+ */
+function activeAssignment(array $attributes = []): TeacherAssignment
+{
+    return TeacherAssignment::factory()->create($attributes);
+}
+
+/**
+ * An assignment that has already ended (ENDED or CANCELLED) - built directly rather than
+ * through end()/cancel(), so a test about those methods is not circularly dependent on the
+ * very transition it is testing.
+ */
+function decidedAssignment(TeacherAssignmentStatus $status, array $attributes = []): TeacherAssignment
+{
+    $assignment = activeAssignment($attributes);
+
+    $assignment->forceFill(['status' => $status, 'active_marker' => null, 'ended_at' => now()])->save();
+
+    return $assignment->refresh();
 }

@@ -12,6 +12,7 @@ permissions, and the client-side checklist.
 | 05 | [admission-management.md](admission-management.md) | Recording and deciding admissions, the `admit`/`reject`/`withdraw` workflow, and how admitting an applicant creates a student |
 | 06 | [enrollment-management.md](enrollment-management.md) | The authoritative academic placement - student, session, class, section - one row per session, and why `students` still has no `current_class_id` |
 | 07 | [subject-management.md](subject-management.md) | The subject catalogue and class-subject offerings - Mathematics vs "JSS 2 teaches Mathematics" - and why neither table has a teacher column |
+| 08 | [teacher-assignment.md](teacher-assignment.md) | Assigning teaching staff to class subjects for a session, the single-active-teacher rule, and reassignment via `end` then `create` |
 
 ## Shared across modules
 
@@ -51,6 +52,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 5. **05** - admission management
 6. **06** - student enrollment
 7. **07** - subject catalogue and class-subject offerings
+8. **08** - teacher assignment
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -71,6 +73,11 @@ Module 07 depends on Module 01 and Module 02 (a class subject offers a subject t
 active class) only - not on Module 04, 05 or 06. A subject exists independently of any student
 ever being enrolled to study it. See
 [subject-management.md](subject-management.md) §0.
+
+Module 08 depends on Module 01, Module 03 (the teaching staff member) and Module 07 (the class
+subject being assigned) - not on Module 04, 05 or 06. Unlike a class subject itself, WHO
+teaches it is session-scoped, so Module 08 also depends on Module 02's academic session. See
+[teacher-assignment.md](teacher-assignment.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,

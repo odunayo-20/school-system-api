@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
+use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
 use App\Http\Controllers\Api\V1\Student\StudentController;
 use App\Http\Controllers\Api\V1\Subject\ClassSubjectController;
 use App\Http\Controllers\Api\V1\Subject\SubjectController;
@@ -536,4 +537,60 @@ Route::middleware(['auth:api', 'active'])->prefix('class-subjects')->name('class
     Route::put('{classSubject}', [ClassSubjectController::class, 'update'])
         ->middleware('permission:class_subjects.update')
         ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Teacher assignment routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 08. An assignment names which teaching staff member (Staff whose staff_type is
+| TEACHING) is responsible for a class subject, for one academic session - session-scoped,
+| unlike class_subjects, because who teaches a standing curriculum offering genuinely changes
+| year to year. See the teacher_assignments migration.
+|
+| The permissions are seeded by TeacherAssignmentPermissionSeeder and need no code change to
+| take effect. REGISTRAR holds only teacher_assignments.view here, a deliberate departure from
+| the full CRUD Modules 05-07 grant REGISTRAR: RoleSeeder does not name staffing assignment
+| among a registrar's duties the way it names admissions and enrollment.
+|
+| NO delete endpoint and no teacher_assignments.delete permission, for the same reason
+| Modules 05-07 have none for their own historical anchor records - stronger here, because a
+| future assessment/score/result chain will reference exactly this row to answer "who taught
+| this". `cancel` is the record-preserving replacement.
+|
+| Two dedicated workflow endpoints - end, cancel - rather than reaching status through PUT,
+| following Module 06's withdraw/cancel pattern: each is a one-shot state transition, so each
+| is gated on its own permission, independent of teacher_assignments.update.
+|
+| PUT touches only notes. There is no route or field through which the assignment itself
+| (teaching_staff_id, class_subject_id, academic_session_id) can be changed once created -
+| reassignment is end() the current one, then POST a new one, composing two primitives rather
+| than a third "reassign" operation this module does not build.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('teacher-assignments')->name('teacher-assignments.')->group(function (): void {
+    Route::get('/', [TeacherAssignmentController::class, 'index'])
+        ->middleware('permission:teacher_assignments.view')
+        ->name('index');
+
+    Route::post('/', [TeacherAssignmentController::class, 'store'])
+        ->middleware('permission:teacher_assignments.create')
+        ->name('store');
+
+    Route::get('{teacherAssignment}', [TeacherAssignmentController::class, 'show'])
+        ->middleware('permission:teacher_assignments.view')
+        ->name('show');
+
+    Route::put('{teacherAssignment}', [TeacherAssignmentController::class, 'update'])
+        ->middleware('permission:teacher_assignments.update')
+        ->name('update');
+
+    Route::post('{teacherAssignment}/end', [TeacherAssignmentController::class, 'end'])
+        ->middleware('permission:teacher_assignments.end')
+        ->name('end');
+
+    Route::post('{teacherAssignment}/cancel', [TeacherAssignmentController::class, 'cancel'])
+        ->middleware('permission:teacher_assignments.cancel')
+        ->name('cancel');
 });
