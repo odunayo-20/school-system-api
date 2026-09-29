@@ -72,17 +72,25 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('auth', fn (Request $request): Limit => Limit::perMinute(
             (int) env('AUTH_RATE_LIMIT_PER_MINUTE', 5)
         )->by($this->throttleKey($request)));
+
+        // Public result-checker: student_number + date_of_birth guessing protection, keyed
+        // the same way as login - the credential field plus the client IP - so one attacker
+        // cannot lock out a whole class by hammering one registration number, and cannot
+        // spread guesses across many numbers from a single host unnoticed.
+        RateLimiter::for('result-checker', fn (Request $request): Limit => Limit::perMinute(
+            (int) env('RESULT_CHECKER_RATE_LIMIT_PER_MINUTE', 5)
+        )->by($this->throttleKey($request, 'student_number')));
     }
 
     /**
-     * Key on the submitted email address together with the client IP, so one attacker
-     * cannot lock out an entire school by hammering a shared address, and cannot
-     * spread attempts across many addresses from a single host unnoticed.
+     * Key on the submitted credential field together with the client IP, so one attacker
+     * cannot lock out an entire school by hammering a shared value, and cannot spread
+     * attempts across many values from a single host unnoticed.
      */
-    protected function throttleKey(Request $request): string
+    protected function throttleKey(Request $request, string $field = 'email'): string
     {
-        $email = $request->input('email');
+        $value = $request->input($field);
 
-        return mb_strtolower(is_string($email) ? trim($email) : '').'|'.$request->ip();
+        return mb_strtolower(is_string($value) ? trim($value) : '').'|'.$request->ip();
     }
 }

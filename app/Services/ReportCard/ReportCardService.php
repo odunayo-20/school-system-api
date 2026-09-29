@@ -63,6 +63,29 @@ class ReportCardService
     {
         $this->assertEnrollmentViewable($enrollment, $user);
 
+        return $this->compile($enrollment, $term);
+    }
+
+    /**
+     * The identical lookup, for a caller already authorized by a mechanism other than a
+     * logged-in User - Module 16's public Result Checker verifies a student_number/
+     * date_of_birth pair instead, before this is ever called. Kept as one method, calling the
+     * same compile() as forEnrollmentAndTerm(), so there is exactly one place that decides
+     * what counts as a "finalized" result and exactly one place that computes the summary -
+     * never a second calculation engine for the public path.
+     *
+     * @return array{enrollment: Enrollment, term: Term, results: Collection<int, Result>, summary: array<string, mixed>}
+     */
+    public function forEnrollmentAndTermUnguarded(Enrollment $enrollment, Term $term): array
+    {
+        return $this->compile($enrollment, $term);
+    }
+
+    /**
+     * @return array{enrollment: Enrollment, term: Term, results: Collection<int, Result>, summary: array<string, mixed>}
+     */
+    protected function compile(Enrollment $enrollment, Term $term): array
+    {
         $results = Result::query()
             ->where('enrollment_id', $enrollment->id)
             ->where('term_id', $term->id)

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
 use App\Http\Controllers\Api\V1\Promotion\PromotionController;
 use App\Http\Controllers\Api\V1\ReportCard\ReportCardController;
 use App\Http\Controllers\Api\V1\Result\ResultController;
+use App\Http\Controllers\Api\V1\ResultChecker\ResultCheckerController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
@@ -879,3 +880,23 @@ Route::middleware(['auth:api', 'active'])->group(function (): void {
             ->name('show');
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Result checker
+|--------------------------------------------------------------------------
+|
+| Module 16. A public, unauthenticated way to retrieve a student's already-PUBLISHED (or
+| LOCKED) result, for a parent or guardian with no portal login - the audience Module 14's own
+| report-card docs already anticipated this module for. No auth:api/active middleware and no
+| permission gate: the credential is the request body (student_number + date_of_birth), not a
+| bearer token. "throttle:result-checker" is this endpoint's own brute-force protection, the
+| same technique "throttle:login" already gives credential guessing above.
+|
+| Reuses ReportCardService::forEnrollmentAndTermUnguarded() (Module 14) and ReportCardResource
+| unchanged - never a second result-calculation engine or a second presentation format.
+*/
+
+Route::post('result-checker', [ResultCheckerController::class, 'check'])
+    ->middleware('throttle:result-checker')
+    ->name('result-checker.check');
