@@ -3,6 +3,7 @@
 use App\Enums\AdmissionStatus;
 use App\Enums\CatalogStatus;
 use App\Enums\EnrollmentStatus;
+use App\Enums\ResultStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
 use App\Enums\TeacherAssignmentStatus;
@@ -30,6 +31,7 @@ use App\Models\Term;
 use App\Models\User;
 use App\Services\Result\ResultService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -1024,4 +1026,78 @@ function publishedResult(?User $actor = null): Result
 function lockedResult(?User $actor = null): Result
 {
     return app(ResultService::class)->lock(publishedResult(), $actor ?? userWithRole(Role::ADMIN));
+}
+
+/*
+|--------------------------------------------------------------------------
+| Report card module helpers (Module 14)
+|--------------------------------------------------------------------------
+|
+| A report card aggregates MULTIPLE Result rows sharing one enrollment and one term - the one
+| shape no existing Module 12/13 helper builds, since each of those is deliberately scoped to
+| a single, freshly matched class subject. reportCardContext() builds one enrollment and term
+| once, then $count distinct class subjects (each with its own assessment, score and Result)
+| against that SAME pair, driving each Result through the real compile()/submit()/approve()/
+| publish()/lock() pipeline up to $targetStatus - never assembled by hand, so a report-card
+| test exercises genuinely authoritative data.
+|
+*/
+
+/**
+ * @return array{0: Enrollment, 1: Term, 2: Collection<int, Result>}
+ */
+function reportCardContext(
+    int $count = 2,
+    ResultStatus $targetStatus = ResultStatus::PUBLISHED,
+    array $enrollmentAttributes = [],
+): array {
+    $class = selectableSchoolClass();
+    $session = eligibleSession();
+    $term = Term::factory()->forSession($session, 1)->create();
+    $section = Section::factory()->within($class, 'A', 'A')->create();
+    $enrollment = activeEnrollment(array_merge([
+        'school_class_id' => $class->id,
+        'section_id' => $section->id,
+        'academic_session_id' => $session->id,
+    ], $enrollmentAttributes));
+
+    $admin = userWithRole(Role::ADMIN);
+    $service = app(ResultService::class);
+
+    $results = collect(range(1, $count))->map(function (int $i) use ($class, $term, $enrollment, $admin, $service, $targetStatus): Result {
+        $classSubject = activeClassSubject(['school_class_id' => $class->id]);
+        $assessment = activeAssessment([
+            'class_subject_id' => $classSubject->id,
+            'term_id' => $term->id,
+            'max_score' => 20,
+        ]);
+
+        Score::factory()->forAssessment($assessment)->forEnrollment($enrollment)->create([
+            'score' => 10 + $i,
+        ]);
+
+        $result = $service->compile([
+            'enrollment_id' => $enrollment->id,
+            'class_subject_id' => $classSubject->id,
+            'term_id' => $term->id,
+        ], $admin);
+
+        foreach ([ResultStatus::SUBMITTED, ResultStatus::APPROVED, ResultStatus::PUBLISHED, ResultStatus::LOCKED] as $step) {
+            if ($result->status === $targetStatus) {
+                break;
+            }
+
+            $result = match ($step) {
+                ResultStatus::SUBMITTED => $service->submit($result, $admin),
+                ResultStatus::APPROVED => $service->approve($result, $admin),
+                ResultStatus::PUBLISHED => $service->publish($result, $admin),
+                ResultStatus::LOCKED => $service->lock($result, $admin),
+                default => $result,
+            };
+        }
+
+        return $result;
+    });
+
+    return [$enrollment, $term, $results];
 }

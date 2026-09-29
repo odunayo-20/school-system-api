@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
+use App\Http\Controllers\Api\V1\ReportCard\ReportCardController;
 use App\Http\Controllers\Api\V1\Result\ResultController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
@@ -810,4 +811,35 @@ Route::middleware(['auth:api', 'active'])->prefix('results')->name('results.')->
     Route::post('{result}/lock', [ResultController::class, 'lock'])
         ->middleware('permission:results.lock')
         ->name('lock');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Report cards
+|--------------------------------------------------------------------------
+|
+| Module 14. A read-only presentation of a student's finalized subject results for one
+| enrollment and one term - never a second calculation of them. Every figure rendered here is
+| read directly from Module 12's Result rows exactly as Module 13 left them; see
+| ReportCardService's own docblock for the full reasoning, and why only PUBLISHED and LOCKED
+| results ever appear.
+|
+| Two GET routes only - report_cards.view gates both. No POST/PUT/DELETE exists: a report card
+| has no lifecycle of its own to mutate.
+|
+| /report-cards/enrollments/{enrollment}/terms/{term} reuses two EXISTING identifiers -
+| enrollment_id and term_id, the same pair results.enrollment_id/results.term_id already key
+| on - rather than inventing a third "report card id" or keying off student_id/session_id the
+| way a student's identity alone never safely identifies a placement (the same reasoning every
+| module since Module 06 already applies).
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('report-cards')->name('report-cards.')->group(function (): void {
+    Route::get('enrollments/{enrollment}/terms/{term}', [ReportCardController::class, 'show'])
+        ->middleware('permission:report_cards.view')
+        ->name('show');
+
+    Route::get('students/{student}', [ReportCardController::class, 'forStudent'])
+        ->middleware('permission:report_cards.view')
+        ->name('for-student');
 });

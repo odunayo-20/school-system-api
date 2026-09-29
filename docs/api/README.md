@@ -18,6 +18,7 @@ permissions, and the client-side checklist.
 | 11 | [grading.md](grading.md) | Class-level-scoped grading scales and their percentage bands, inclusive boundary rules, overlap/gap handling, and the read-only percentage-to-grade calculation operation |
 | 12 | [result-compilation.md](result-compilation.md) | Compiling raw assessment scores into a subject result for one enrollment, class subject and term - the weighting rules, the missing-scores policy, idempotent recompilation, and why there is no create/update/delete endpoint |
 | 13 | [result-approval-publication.md](result-approval-publication.md) | The result lifecycle from COMPILED through SUBMITTED, APPROVED, PUBLISHED to the terminal LOCKED state - workflow permissions, structural separation of duties, and why compilation is refused past COMPILED |
+| 14 | [report-cards.md](report-cards.md) | A read-only presentation of a student's finalized (PUBLISHED/LOCKED) subject results for one enrollment and term - why there is no `report_cards` table, the summary's plain arithmetic mean, and the first student-facing academic-data permission in this project |
 
 ## Shared across modules
 
@@ -63,6 +64,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 11. **11** - grading
 12. **12** - result compilation
 13. **13** - result approval & publication
+14. **14** - report cards
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -119,6 +121,13 @@ Module 03 through 11 directly, though `submit()` reuses Module 08's teacher-assi
 technique exactly as Module 12 already does for `compile()`. It adds no new table: the
 workflow lives entirely on `results.status`, the same column Module 12 introduced. See
 [result-approval-publication.md](result-approval-publication.md) §0.
+
+Module 14 depends on Module 12 (the `Result` rows it presents) and Module 13 (the
+`PUBLISHED`/`LOCKED` statuses that gate what it shows) only - not on Module 03 through 11
+directly. It adds no table of its own: a report card is a read-only aggregate over `Result`
+rows already grouped by `enrollment_id` and `term_id`. It is also the first module to grant
+`STUDENT` a permission over academic data about themselves beyond Module 01's `profile.*` pair.
+See [report-cards.md](report-cards.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,
