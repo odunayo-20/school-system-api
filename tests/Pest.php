@@ -8,13 +8,16 @@ use App\Enums\UserStatus;
 use App\Models\AcademicSession;
 use App\Models\Admission;
 use App\Models\ClassLevel;
+use App\Models\ClassSubject;
 use App\Models\Enrollment;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
+use App\Models\SchoolClass;
 use App\Models\Section;
 use App\Models\Staff;
 use App\Models\Student;
+use App\Models\Subject;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -508,4 +511,72 @@ function decidedEnrollment(EnrollmentStatus $status, array $attributes = []): En
     $enrollment->forceFill(['status' => $status, 'status_changed_at' => now()])->save();
 
     return $enrollment->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Subject module helpers (Module 07)
+|--------------------------------------------------------------------------
+|
+| name and code are generated from Faker's unique() modifier rather than a fixed literal,
+| unlike staffCreatePayload()/studentCreatePayload(): a subject's name and code are globally
+| unique, and a test that calls this helper more than once in a row (deliberately, to assert
+| a duplicate is refused) must not collide with ITSELF before it ever reaches the assertion
+| under test.
+|
+*/
+
+function subjectCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Subject '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and code are always present
+ * unless a test is deliberately omitting one.
+ */
+function subjectUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Subject '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A subject built through the factory rather than the API, so a test about the API is not
+ * also testing record creation.
+ */
+function catalogSubject(array $attributes = []): Subject
+{
+    return Subject::factory()->create($attributes);
+}
+
+/**
+ * A class whose whole hierarchy - the class itself, and its class level - is ACTIVE, matching
+ * the rule that a new class subject may only be offered into a fully active hierarchy. Named
+ * to match selectableClassLevel() above.
+ */
+function selectableSchoolClass(): SchoolClass
+{
+    return SchoolClass::factory()->create();
+}
+
+function classSubjectCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'school_class_id' => selectableSchoolClass()->id,
+        'subject_id' => catalogSubject()->id,
+    ], $overrides);
+}
+
+/**
+ * An active class subject, built through the factory rather than the API.
+ */
+function activeClassSubject(array $attributes = []): ClassSubject
+{
+    return ClassSubject::factory()->create($attributes);
 }

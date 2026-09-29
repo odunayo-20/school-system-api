@@ -16,6 +16,8 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Student\StudentController;
+use App\Http\Controllers\Api\V1\Subject\ClassSubjectController;
+use App\Http\Controllers\Api\V1\Subject\SubjectController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -469,4 +471,69 @@ Route::middleware(['auth:api', 'active'])->prefix('enrollments')->name('enrollme
     Route::post('{enrollment}/cancel', [EnrollmentController::class, 'cancel'])
         ->middleware('permission:enrollments.cancel')
         ->name('cancel');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Subject catalogue and class-subject routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 07. A subject (Mathematics, Biology) is a reusable catalogue entry; a class subject
+| (JSS 2 -> Mathematics) is one class's offering of it. Neither carries a teacher, an
+| assessment or a score - see the subjects and class_subjects migrations. Teacher assignment
+| is a future module built on Staff/StaffType, not on a new Teacher entity.
+|
+| The permissions are seeded by SubjectPermissionSeeder and need no code change to take
+| effect.
+|
+| subjects.* has a DELETE endpoint, matching class_levels.*, classes.* and sections.* - a
+| subject is a catalogue entry, the same family as those three, guarded against removing one
+| that any class still offers.
+|
+| class_subjects.* has NO delete endpoint. It is the anchor a future teacher assignment and a
+| future assessment will reference, the identical posture Module 06 takes toward enrollments.
+| "Removing a subject from a class" is status: INACTIVE through the ordinary update, not a
+| delete and not a dedicated workflow endpoint either - unlike ending an admission or an
+| enrollment, deactivating an offering is a freely reversible toggle with no side effect
+| beyond the record itself.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('subjects')->name('subjects.')->group(function (): void {
+    Route::get('/', [SubjectController::class, 'index'])
+        ->middleware('permission:subjects.view')
+        ->name('index');
+
+    Route::post('/', [SubjectController::class, 'store'])
+        ->middleware('permission:subjects.create')
+        ->name('store');
+
+    Route::get('{subject}', [SubjectController::class, 'show'])
+        ->middleware('permission:subjects.view')
+        ->name('show');
+
+    Route::put('{subject}', [SubjectController::class, 'update'])
+        ->middleware('permission:subjects.update')
+        ->name('update');
+
+    Route::delete('{subject}', [SubjectController::class, 'destroy'])
+        ->middleware('permission:subjects.delete')
+        ->name('destroy');
+});
+
+Route::middleware(['auth:api', 'active'])->prefix('class-subjects')->name('class-subjects.')->group(function (): void {
+    Route::get('/', [ClassSubjectController::class, 'index'])
+        ->middleware('permission:class_subjects.view')
+        ->name('index');
+
+    Route::post('/', [ClassSubjectController::class, 'store'])
+        ->middleware('permission:class_subjects.create')
+        ->name('store');
+
+    Route::get('{classSubject}', [ClassSubjectController::class, 'show'])
+        ->middleware('permission:class_subjects.view')
+        ->name('show');
+
+    Route::put('{classSubject}', [ClassSubjectController::class, 'update'])
+        ->middleware('permission:class_subjects.update')
+        ->name('update');
 });

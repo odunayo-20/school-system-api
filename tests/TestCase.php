@@ -9,6 +9,7 @@ use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\StaffPermissionSeeder;
 use Database\Seeders\StudentPermissionSeeder;
+use Database\Seeders\SubjectPermissionSeeder;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -18,15 +19,16 @@ abstract class TestCase extends BaseTestCase
      * every module implemented so far, so authorization assertions are made against a
      * known baseline.
      *
-     * All six permission seeders run, in the same order as DatabaseSeeder, and that
+     * All seven permission seeders run, in the same order as DatabaseSeeder, and that
      * order is load-bearing. PermissionSeeder grants Module 01's permissions with sync(),
      * which REPLACES each role's permission set; AcademicPermissionSeeder,
-     * StaffPermissionSeeder, StudentPermissionSeeder, AdmissionPermissionSeeder and
-     * EnrollmentPermissionSeeder grant theirs with syncWithoutDetaching(), so running them
-     * afterwards adds to the set rather than replacing it. Seeded in the other order, the
-     * database would look correct and every Module 02 through Module 06 route would answer
-     * 403. That a test of the combined baseline depends on this is the point of seeding all
-     * six here rather than only the ones the test under way needs.
+     * StaffPermissionSeeder, StudentPermissionSeeder, AdmissionPermissionSeeder,
+     * EnrollmentPermissionSeeder and SubjectPermissionSeeder grant theirs with
+     * syncWithoutDetaching(), so running them afterwards adds to the set rather than
+     * replacing it. Seeded in the other order, the database would look correct and every
+     * Module 02 through Module 07 route would answer 403. That a test of the combined
+     * baseline depends on this is the point of seeding all seven here rather than only the
+     * ones the test under way needs.
      */
     protected function setUp(): void
     {
@@ -40,6 +42,7 @@ abstract class TestCase extends BaseTestCase
             StudentPermissionSeeder::class,
             AdmissionPermissionSeeder::class,
             EnrollmentPermissionSeeder::class,
+            SubjectPermissionSeeder::class,
         ]);
     }
 }
