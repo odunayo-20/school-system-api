@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AdmissionStatus;
+use App\Enums\CatalogStatus;
 use App\Enums\EnrollmentStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
@@ -8,6 +9,8 @@ use App\Enums\TeacherAssignmentStatus;
 use App\Enums\UserStatus;
 use App\Models\AcademicSession;
 use App\Models\Admission;
+use App\Models\Assessment;
+use App\Models\AssessmentType;
 use App\Models\ClassLevel;
 use App\Models\ClassSubject;
 use App\Models\Enrollment;
@@ -635,4 +638,101 @@ function decidedAssignment(TeacherAssignmentStatus $status, array $attributes = 
     $assignment->forceFill(['status' => $status, 'active_marker' => null, 'ended_at' => now()])->save();
 
     return $assignment->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Assessment configuration module helpers (Module 09)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: an active class subject
+| whose whole hierarchy is active, a non-completed term, and an active assessment type - the
+| same posture assignmentCreatePayload() and classSubjectCreatePayload() take for their own
+| foreign keys.
+|
+*/
+
+function assessmentTypeCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Assessment Type '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and code are always present
+ * unless a test is deliberately omitting one.
+ */
+function assessmentTypeUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Assessment Type '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * An assessment type built through the factory rather than the API, so a test about the API
+ * is not also testing record creation.
+ */
+function catalogAssessmentType(array $attributes = []): AssessmentType
+{
+    return AssessmentType::factory()->create($attributes);
+}
+
+/**
+ * A term that is open for new assessments: not COMPLETED. Term::factory()'s own default is
+ * UPCOMING, so this is a thin, self-documenting alias for it - matching eligibleSession()'s
+ * identical reasoning for academic sessions.
+ */
+function eligibleTerm(): Term
+{
+    return Term::factory()->create();
+}
+
+function assessmentCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'class_subject_id' => activeClassSubject()->id,
+        'term_id' => eligibleTerm()->id,
+        'assessment_type_id' => catalogAssessmentType()->id,
+        'name' => 'CA '.fake()->unique()->numberBetween(1, 1000000),
+        'max_score' => 20,
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and max_score are always
+ * present unless a test is deliberately omitting one.
+ */
+function assessmentUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'CA '.fake()->unique()->numberBetween(1, 1000000),
+        'max_score' => 20,
+    ], $overrides);
+}
+
+/**
+ * An active, configured assessment, built through the factory rather than the API so a test
+ * about the API is not also testing record creation.
+ */
+function activeAssessment(array $attributes = []): Assessment
+{
+    return Assessment::factory()->create($attributes);
+}
+
+/**
+ * An assessment that has been retired (INACTIVE or ARCHIVED) - built directly rather than
+ * through update(), so a test about the update endpoint is not circularly dependent on the
+ * very transition it is testing.
+ */
+function retiredAssessment(CatalogStatus $status, array $attributes = []): Assessment
+{
+    $assessment = activeAssessment($attributes);
+
+    $assessment->forceFill(['status' => $status])->save();
+
+    return $assessment->refresh();
 }

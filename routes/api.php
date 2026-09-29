@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\V1\Academic\SchoolController;
 use App\Http\Controllers\Api\V1\Academic\SectionController;
 use App\Http\Controllers\Api\V1\Academic\TermController;
 use App\Http\Controllers\Api\V1\Admission\AdmissionController;
+use App\Http\Controllers\Api\V1\Assessment\AssessmentController;
+use App\Http\Controllers\Api\V1\Assessment\AssessmentTypeController;
 use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
@@ -593,4 +595,65 @@ Route::middleware(['auth:api', 'active'])->prefix('teacher-assignments')->name('
     Route::post('{teacherAssignment}/cancel', [TeacherAssignmentController::class, 'cancel'])
         ->middleware('permission:teacher_assignments.cancel')
         ->name('cancel');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Assessment configuration
+|--------------------------------------------------------------------------
+|
+| Module 09. An assessment type is a reusable category (CA, Test, Examination); an assessment
+| is one configured instance of a category against a class subject and a term, e.g.
+| "Mathematics - First Term - JSS 2 - CA 1". Neither carries a score, a grade or a result -
+| see the assessments migration. Recording and compiling scores is a future module built on
+| THIS table's id, not on a new entity.
+|
+| assessment_types.* has a DELETE endpoint, matching subjects.*, class_levels.*, classes.*
+| and sections.* - a category is a catalogue entry, the same family as those, guarded against
+| removing one that any assessment still uses.
+|
+| assessments.* has NO delete endpoint. It is the anchor a future score will reference, the
+| identical posture Module 06, Module 07 and Module 08 take toward their own anchor records.
+| "Retiring" a mistakenly configured assessment is status: INACTIVE through the ordinary
+| update, not a delete.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('assessment-types')->name('assessment-types.')->group(function (): void {
+    Route::get('/', [AssessmentTypeController::class, 'index'])
+        ->middleware('permission:assessment_types.view')
+        ->name('index');
+
+    Route::post('/', [AssessmentTypeController::class, 'store'])
+        ->middleware('permission:assessment_types.create')
+        ->name('store');
+
+    Route::get('{assessmentType}', [AssessmentTypeController::class, 'show'])
+        ->middleware('permission:assessment_types.view')
+        ->name('show');
+
+    Route::put('{assessmentType}', [AssessmentTypeController::class, 'update'])
+        ->middleware('permission:assessment_types.update')
+        ->name('update');
+
+    Route::delete('{assessmentType}', [AssessmentTypeController::class, 'destroy'])
+        ->middleware('permission:assessment_types.delete')
+        ->name('destroy');
+});
+
+Route::middleware(['auth:api', 'active'])->prefix('assessments')->name('assessments.')->group(function (): void {
+    Route::get('/', [AssessmentController::class, 'index'])
+        ->middleware('permission:assessments.view')
+        ->name('index');
+
+    Route::post('/', [AssessmentController::class, 'store'])
+        ->middleware('permission:assessments.create')
+        ->name('store');
+
+    Route::get('{assessment}', [AssessmentController::class, 'show'])
+        ->middleware('permission:assessments.view')
+        ->name('show');
+
+    Route::put('{assessment}', [AssessmentController::class, 'update'])
+        ->middleware('permission:assessments.update')
+        ->name('update');
 });
