@@ -19,6 +19,7 @@ permissions, and the client-side checklist.
 | 12 | [result-compilation.md](result-compilation.md) | Compiling raw assessment scores into a subject result for one enrollment, class subject and term - the weighting rules, the missing-scores policy, idempotent recompilation, and why there is no create/update/delete endpoint |
 | 13 | [result-approval-publication.md](result-approval-publication.md) | The result lifecycle from COMPILED through SUBMITTED, APPROVED, PUBLISHED to the terminal LOCKED state - workflow permissions, structural separation of duties, and why compilation is refused past COMPILED |
 | 14 | [report-cards.md](report-cards.md) | A read-only presentation of a student's finalized (PUBLISHED/LOCKED) subject results for one enrollment and term - why there is no `report_cards` table, the summary's plain arithmetic mean, and the first student-facing academic-data permission in this project |
+| 15 | [student-promotion.md](student-promotion.md) | Recording PROMOTED/RETAINED/GRADUATED/NOT_ELIGIBLE decisions as new `Enrollment` rows, never a mutation of the old one or a `current_class_id` on `Student` - the two-layer idempotency guarantee, and why there is no automatic promotion formula |
 
 ## Shared across modules
 
@@ -65,6 +66,7 @@ A later module depends on Module 02's academic state, so deploy in this order:
 12. **12** - result compilation
 13. **13** - result approval & publication
 14. **14** - report cards
+15. **15** - student promotion
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
@@ -128,6 +130,15 @@ directly. It adds no table of its own: a report card is a read-only aggregate ov
 rows already grouped by `enrollment_id` and `term_id`. It is also the first module to grant
 `STUDENT` a permission over academic data about themselves beyond Module 01's `profile.*` pair.
 See [report-cards.md](report-cards.md) §0.
+
+Module 15 depends on Module 02 (the target academic session a decision names), Module 04 (the
+student a decision is about) and Module 06 (the source enrollment a decision is recorded against,
+and the `EnrollmentService::create()` this module calls directly to place a `PROMOTED`/`RETAINED`
+student into their target class) - not on Module 03, 05, 07 through 14 directly, though it reuses
+Module 04's `StudentService::update()` unchanged for the `GRADUATED` transition. It adds one new
+table, `promotions`, specifically because `GRADUATED` and `NOT_ELIGIBLE` produce no enrollment row
+for a decision to attach to - every other decision is recorded as a plain new `Enrollment`, never
+a mutation of the source one. See [student-promotion.md](student-promotion.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,

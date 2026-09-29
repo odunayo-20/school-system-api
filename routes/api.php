@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
+use App\Http\Controllers\Api\V1\Promotion\PromotionController;
 use App\Http\Controllers\Api\V1\ReportCard\ReportCardController;
 use App\Http\Controllers\Api\V1\Result\ResultController;
 use App\Http\Controllers\Api\V1\Score\ScoreController;
@@ -842,4 +843,39 @@ Route::middleware(['auth:api', 'active'])->prefix('report-cards')->name('report-
     Route::get('students/{student}', [ReportCardController::class, 'forStudent'])
         ->middleware('permission:report_cards.view')
         ->name('for-student');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Student promotion
+|--------------------------------------------------------------------------
+|
+| Module 15. Recording what happens to a student's placement going into a new academic
+| session - PROMOTED, RETAINED, GRADUATED or NOT_ELIGIBLE - never a mutation of the source
+| enrollment. See the promotions migration and PromotionService for the full reasoning.
+|
+| POST /students/{student}/promote lives alongside GET/PUT /students/{student} (Module 04)
+| rather than inside that module's own route group, because it is owned by a different
+| controller and permission - the identical "same URL family, separate ownership" shape
+| results/{result}/submit|approve|... (Module 13) already establishes for a route that reads
+| like it belongs to one resource but is gated and served by another module entirely.
+|
+| No destroy(), no update(): a promotion decision is a one-shot historical fact. No bulk
+| endpoint either - see the Module 15 audit for why bulk promotion is deliberately deferred.
+*/
+
+Route::middleware(['auth:api', 'active'])->group(function (): void {
+    Route::post('students/{student}/promote', [PromotionController::class, 'store'])
+        ->middleware('permission:promotions.create')
+        ->name('students.promote');
+
+    Route::prefix('promotions')->name('promotions.')->group(function (): void {
+        Route::get('/', [PromotionController::class, 'index'])
+            ->middleware('permission:promotions.view')
+            ->name('index');
+
+        Route::get('{promotion}', [PromotionController::class, 'show'])
+            ->middleware('permission:promotions.view')
+            ->name('show');
+    });
 });

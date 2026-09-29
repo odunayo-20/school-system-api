@@ -3,6 +3,7 @@
 use App\Enums\AdmissionStatus;
 use App\Enums\CatalogStatus;
 use App\Enums\EnrollmentStatus;
+use App\Enums\PromotionDecision;
 use App\Enums\ResultStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
@@ -17,6 +18,7 @@ use App\Models\ClassSubject;
 use App\Models\Enrollment;
 use App\Models\GradingScale;
 use App\Models\Permission;
+use App\Models\Promotion;
 use App\Models\Result;
 use App\Models\Role as RoleModel;
 use App\Models\School;
@@ -29,6 +31,7 @@ use App\Models\Subject;
 use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Promotion\PromotionService;
 use App\Services\Result\ResultService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -1100,4 +1103,102 @@ function reportCardContext(
     });
 
     return [$enrollment, $term, $results];
+}
+
+/*
+|--------------------------------------------------------------------------
+| Promotion module helpers (Module 15)
+|--------------------------------------------------------------------------
+|
+| Chronological ordering matters for almost every promotion test, and
+| AcademicSession::factory()'s own default start_date is a random HISTORICAL date, not "now" -
+| confirmed directly while smoke-testing this module's own service, the hard way, before any
+| test was written. promotionSession() therefore always takes an explicit start/end date rather
+| than leaning on the factory default, and promotionContext() builds a source session strictly
+| before its target session for exactly this reason.
+|
+*/
+
+function promotionSession(string $startDate, string $endDate): AcademicSession
+{
+    return AcademicSession::factory()->create(['start_date' => $startDate, 'end_date' => $endDate]);
+}
+
+/**
+ * A source enrollment ready to be promoted: one class level holding a source class ("JSS 2")
+ * and a target class ("JSS 3") - the brief's own worked example - each with its own section
+ * named "A", a source session and a strictly later target session, and an ACTIVE enrollment
+ * placing a student in the source class/section for the source session.
+ *
+ * class_level_id-scoped uniqueness (Module 07's own design) means the literal names/codes
+ * below never collide across calls: each call builds a FRESH class level, so "JSS 2"/"JSS 3"
+ * are always new rows, never a second attempt at an existing one.
+ *
+ * @return array{enrollment: Enrollment, sourceClass: SchoolClass, targetClass: SchoolClass, sourceSection: Section, targetSection: Section, sourceSession: AcademicSession, targetSession: AcademicSession}
+ */
+function promotionContext(array $enrollmentAttributes = []): array
+{
+    $classLevel = ClassLevel::factory()->create();
+    $sourceClass = SchoolClass::factory()->within($classLevel, 'JSS 2', 'JSS2')->create();
+    $targetClass = SchoolClass::factory()->within($classLevel, 'JSS 3', 'JSS3')->create();
+    $sourceSection = Section::factory()->within($sourceClass, 'A', 'A')->create();
+    $targetSection = Section::factory()->within($targetClass, 'A', 'A')->create();
+
+    $sourceSession = promotionSession('2025-09-01', '2026-07-31');
+    $targetSession = promotionSession('2026-09-01', '2027-07-31');
+
+    $enrollment = activeEnrollment(array_merge([
+        'school_class_id' => $sourceClass->id,
+        'section_id' => $sourceSection->id,
+        'academic_session_id' => $sourceSession->id,
+    ], $enrollmentAttributes));
+
+    return [
+        'enrollment' => $enrollment,
+        'sourceClass' => $sourceClass,
+        'targetClass' => $targetClass,
+        'sourceSection' => $sourceSection,
+        'targetSection' => $targetSection,
+        'sourceSession' => $sourceSession,
+        'targetSession' => $targetSession,
+    ];
+}
+
+/**
+ * A valid PROMOTED payload built from a freshly matched promotionContext(). A caller
+ * overriding source_enrollment_id/target_academic_session_id is responsible for the
+ * consistency of what it overrides - the same posture scoreCreatePayload() takes for its own
+ * foreign keys.
+ *
+ * @param  array{enrollment: Enrollment, sourceClass: SchoolClass, targetClass: SchoolClass, sourceSection: Section, targetSection: Section, sourceSession: AcademicSession, targetSession: AcademicSession}  $context
+ */
+function promotePayload(array $context, array $overrides = []): array
+{
+    return array_merge([
+        'source_enrollment_id' => $context['enrollment']->id,
+        'target_academic_session_id' => $context['targetSession']->id,
+        'decision' => PromotionDecision::PROMOTED->value,
+        'target_school_class_id' => $context['targetClass']->id,
+        'target_section_id' => $context['targetSection']->id,
+    ], $overrides);
+}
+
+/**
+ * A recorded PROMOTED decision, built through the service's own promote() path rather than
+ * the factory, so its target enrollment genuinely reflects a real class/section pair - a test
+ * that wants a freshly promoted student uses this instead of assembling one from
+ * PromotionFactory by hand.
+ */
+function promotedStudent(?User $actor = null): Promotion
+{
+    $context = promotionContext();
+    $actor ??= userWithRole(Role::ADMIN);
+
+    return app(PromotionService::class)->promote($context['enrollment']->student, [
+        'source_enrollment_id' => $context['enrollment']->id,
+        'target_academic_session_id' => $context['targetSession']->id,
+        'decision' => PromotionDecision::PROMOTED->value,
+        'target_school_class_id' => $context['targetClass']->id,
+        'target_section_id' => $context['targetSection']->id,
+    ], $actor);
 }
