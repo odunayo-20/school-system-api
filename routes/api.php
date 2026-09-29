@@ -7,13 +7,20 @@ use App\Http\Controllers\Api\V1\Academic\SchoolClassController;
 use App\Http\Controllers\Api\V1\Academic\SchoolController;
 use App\Http\Controllers\Api\V1\Academic\SectionController;
 use App\Http\Controllers\Api\V1\Academic\TermController;
+use App\Http\Controllers\Api\V1\Admission\AdmissionController;
+use App\Http\Controllers\Api\V1\Assessment\AssessmentController;
+use App\Http\Controllers\Api\V1\Assessment\AssessmentTypeController;
 use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
+use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
+use App\Http\Controllers\Api\V1\Staff\TeacherAssignmentController;
 use App\Http\Controllers\Api\V1\Student\StudentController;
+use App\Http\Controllers\Api\V1\Subject\ClassSubjectController;
+use App\Http\Controllers\Api\V1\Subject\SubjectController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -361,5 +368,292 @@ Route::middleware(['auth:api', 'active'])->prefix('students')->name('students.')
 
     Route::put('{student}', [StudentController::class, 'update'])
         ->middleware('permission:students.update')
+        ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admission management routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 05. An admission is the school's decision record for one applicant, targeting one
+| academic session - not a pupil, and not an enrollment. See the admissions migration and
+| AdmissionService for the full reasoning.
+|
+| The permissions are seeded by AdmissionPermissionSeeder and need no code change to take
+| effect.
+|
+| NO delete endpoint and no admissions.delete permission, for the same reason Module 03 and
+| Module 04 have none: an admission is a historical business record of a decision, not
+| something the school erases because it is old.
+|
+| Three dedicated workflow endpoints - admit, reject, withdraw - rather than reaching the
+| status through PUT. Each is a state transition with a side effect beyond the record it
+| names (admit's is a created Student), so each is separated exactly as Module 03 separated
+| staff.activate/staff.deactivate from the ordinary amend, and each is gated on its own
+| permission so it can be granted independently of admissions.update.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('admissions')->name('admissions.')->group(function (): void {
+    Route::get('/', [AdmissionController::class, 'index'])
+        ->middleware('permission:admissions.view')
+        ->name('index');
+
+    Route::post('/', [AdmissionController::class, 'store'])
+        ->middleware('permission:admissions.create')
+        ->name('store');
+
+    Route::get('{admission}', [AdmissionController::class, 'show'])
+        ->middleware('permission:admissions.view')
+        ->name('show');
+
+    Route::put('{admission}', [AdmissionController::class, 'update'])
+        ->middleware('permission:admissions.update')
+        ->name('update');
+
+    Route::post('{admission}/admit', [AdmissionController::class, 'admit'])
+        ->middleware('permission:admissions.admit')
+        ->name('admit');
+
+    Route::post('{admission}/reject', [AdmissionController::class, 'reject'])
+        ->middleware('permission:admissions.reject')
+        ->name('reject');
+
+    Route::post('{admission}/withdraw', [AdmissionController::class, 'withdraw'])
+        ->middleware('permission:admissions.withdraw')
+        ->name('withdraw');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Student enrollment routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 06. An enrollment is the authoritative academic placement - student, session, class
+| and section - for one academic session. It is not the student's identity (Module 04) and
+| not the decision that may have preceded it (Module 05); see the enrollments migration.
+|
+| The permissions are seeded by EnrollmentPermissionSeeder and need no code change to take
+| effect.
+|
+| NO delete endpoint and no enrollments.delete permission, for the same reason Module 03, 04
+| and 05 have none - stronger here, because results, attendance, promotion and report cards
+| are all expected to reference this row. `cancel` is the record-preserving replacement.
+|
+| Two dedicated workflow endpoints - withdraw, cancel - rather than reaching status through
+| PUT, following Module 05's admit/reject/withdraw pattern: each is a state transition with a
+| permanent effect, so each is gated on its own permission, independent of enrollments.update.
+|
+| PUT touches only enrollment_date and notes. There is no route or field through which the
+| placement itself (student_id, academic_session_id, school_class_id, section_id) can be
+| changed once created - a transfer/class-change operation is explicitly out of this module's
+| scope; see the Module 06 audit.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('enrollments')->name('enrollments.')->group(function (): void {
+    Route::get('/', [EnrollmentController::class, 'index'])
+        ->middleware('permission:enrollments.view')
+        ->name('index');
+
+    Route::post('/', [EnrollmentController::class, 'store'])
+        ->middleware('permission:enrollments.create')
+        ->name('store');
+
+    Route::get('{enrollment}', [EnrollmentController::class, 'show'])
+        ->middleware('permission:enrollments.view')
+        ->name('show');
+
+    Route::put('{enrollment}', [EnrollmentController::class, 'update'])
+        ->middleware('permission:enrollments.update')
+        ->name('update');
+
+    Route::post('{enrollment}/withdraw', [EnrollmentController::class, 'withdraw'])
+        ->middleware('permission:enrollments.withdraw')
+        ->name('withdraw');
+
+    Route::post('{enrollment}/cancel', [EnrollmentController::class, 'cancel'])
+        ->middleware('permission:enrollments.cancel')
+        ->name('cancel');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Subject catalogue and class-subject routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 07. A subject (Mathematics, Biology) is a reusable catalogue entry; a class subject
+| (JSS 2 -> Mathematics) is one class's offering of it. Neither carries a teacher, an
+| assessment or a score - see the subjects and class_subjects migrations. Teacher assignment
+| is a future module built on Staff/StaffType, not on a new Teacher entity.
+|
+| The permissions are seeded by SubjectPermissionSeeder and need no code change to take
+| effect.
+|
+| subjects.* has a DELETE endpoint, matching class_levels.*, classes.* and sections.* - a
+| subject is a catalogue entry, the same family as those three, guarded against removing one
+| that any class still offers.
+|
+| class_subjects.* has NO delete endpoint. It is the anchor a future teacher assignment and a
+| future assessment will reference, the identical posture Module 06 takes toward enrollments.
+| "Removing a subject from a class" is status: INACTIVE through the ordinary update, not a
+| delete and not a dedicated workflow endpoint either - unlike ending an admission or an
+| enrollment, deactivating an offering is a freely reversible toggle with no side effect
+| beyond the record itself.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('subjects')->name('subjects.')->group(function (): void {
+    Route::get('/', [SubjectController::class, 'index'])
+        ->middleware('permission:subjects.view')
+        ->name('index');
+
+    Route::post('/', [SubjectController::class, 'store'])
+        ->middleware('permission:subjects.create')
+        ->name('store');
+
+    Route::get('{subject}', [SubjectController::class, 'show'])
+        ->middleware('permission:subjects.view')
+        ->name('show');
+
+    Route::put('{subject}', [SubjectController::class, 'update'])
+        ->middleware('permission:subjects.update')
+        ->name('update');
+
+    Route::delete('{subject}', [SubjectController::class, 'destroy'])
+        ->middleware('permission:subjects.delete')
+        ->name('destroy');
+});
+
+Route::middleware(['auth:api', 'active'])->prefix('class-subjects')->name('class-subjects.')->group(function (): void {
+    Route::get('/', [ClassSubjectController::class, 'index'])
+        ->middleware('permission:class_subjects.view')
+        ->name('index');
+
+    Route::post('/', [ClassSubjectController::class, 'store'])
+        ->middleware('permission:class_subjects.create')
+        ->name('store');
+
+    Route::get('{classSubject}', [ClassSubjectController::class, 'show'])
+        ->middleware('permission:class_subjects.view')
+        ->name('show');
+
+    Route::put('{classSubject}', [ClassSubjectController::class, 'update'])
+        ->middleware('permission:class_subjects.update')
+        ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Teacher assignment routes (v1)
+|--------------------------------------------------------------------------
+|
+| Module 08. An assignment names which teaching staff member (Staff whose staff_type is
+| TEACHING) is responsible for a class subject, for one academic session - session-scoped,
+| unlike class_subjects, because who teaches a standing curriculum offering genuinely changes
+| year to year. See the teacher_assignments migration.
+|
+| The permissions are seeded by TeacherAssignmentPermissionSeeder and need no code change to
+| take effect. REGISTRAR holds only teacher_assignments.view here, a deliberate departure from
+| the full CRUD Modules 05-07 grant REGISTRAR: RoleSeeder does not name staffing assignment
+| among a registrar's duties the way it names admissions and enrollment.
+|
+| NO delete endpoint and no teacher_assignments.delete permission, for the same reason
+| Modules 05-07 have none for their own historical anchor records - stronger here, because a
+| future assessment/score/result chain will reference exactly this row to answer "who taught
+| this". `cancel` is the record-preserving replacement.
+|
+| Two dedicated workflow endpoints - end, cancel - rather than reaching status through PUT,
+| following Module 06's withdraw/cancel pattern: each is a one-shot state transition, so each
+| is gated on its own permission, independent of teacher_assignments.update.
+|
+| PUT touches only notes. There is no route or field through which the assignment itself
+| (teaching_staff_id, class_subject_id, academic_session_id) can be changed once created -
+| reassignment is end() the current one, then POST a new one, composing two primitives rather
+| than a third "reassign" operation this module does not build.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('teacher-assignments')->name('teacher-assignments.')->group(function (): void {
+    Route::get('/', [TeacherAssignmentController::class, 'index'])
+        ->middleware('permission:teacher_assignments.view')
+        ->name('index');
+
+    Route::post('/', [TeacherAssignmentController::class, 'store'])
+        ->middleware('permission:teacher_assignments.create')
+        ->name('store');
+
+    Route::get('{teacherAssignment}', [TeacherAssignmentController::class, 'show'])
+        ->middleware('permission:teacher_assignments.view')
+        ->name('show');
+
+    Route::put('{teacherAssignment}', [TeacherAssignmentController::class, 'update'])
+        ->middleware('permission:teacher_assignments.update')
+        ->name('update');
+
+    Route::post('{teacherAssignment}/end', [TeacherAssignmentController::class, 'end'])
+        ->middleware('permission:teacher_assignments.end')
+        ->name('end');
+
+    Route::post('{teacherAssignment}/cancel', [TeacherAssignmentController::class, 'cancel'])
+        ->middleware('permission:teacher_assignments.cancel')
+        ->name('cancel');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Assessment configuration
+|--------------------------------------------------------------------------
+|
+| Module 09. An assessment type is a reusable category (CA, Test, Examination); an assessment
+| is one configured instance of a category against a class subject and a term, e.g.
+| "Mathematics - First Term - JSS 2 - CA 1". Neither carries a score, a grade or a result -
+| see the assessments migration. Recording and compiling scores is a future module built on
+| THIS table's id, not on a new entity.
+|
+| assessment_types.* has a DELETE endpoint, matching subjects.*, class_levels.*, classes.*
+| and sections.* - a category is a catalogue entry, the same family as those, guarded against
+| removing one that any assessment still uses.
+|
+| assessments.* has NO delete endpoint. It is the anchor a future score will reference, the
+| identical posture Module 06, Module 07 and Module 08 take toward their own anchor records.
+| "Retiring" a mistakenly configured assessment is status: INACTIVE through the ordinary
+| update, not a delete.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('assessment-types')->name('assessment-types.')->group(function (): void {
+    Route::get('/', [AssessmentTypeController::class, 'index'])
+        ->middleware('permission:assessment_types.view')
+        ->name('index');
+
+    Route::post('/', [AssessmentTypeController::class, 'store'])
+        ->middleware('permission:assessment_types.create')
+        ->name('store');
+
+    Route::get('{assessmentType}', [AssessmentTypeController::class, 'show'])
+        ->middleware('permission:assessment_types.view')
+        ->name('show');
+
+    Route::put('{assessmentType}', [AssessmentTypeController::class, 'update'])
+        ->middleware('permission:assessment_types.update')
+        ->name('update');
+
+    Route::delete('{assessmentType}', [AssessmentTypeController::class, 'destroy'])
+        ->middleware('permission:assessment_types.delete')
+        ->name('destroy');
+});
+
+Route::middleware(['auth:api', 'active'])->prefix('assessments')->name('assessments.')->group(function (): void {
+    Route::get('/', [AssessmentController::class, 'index'])
+        ->middleware('permission:assessments.view')
+        ->name('index');
+
+    Route::post('/', [AssessmentController::class, 'store'])
+        ->middleware('permission:assessments.create')
+        ->name('store');
+
+    Route::get('{assessment}', [AssessmentController::class, 'show'])
+        ->middleware('permission:assessments.view')
+        ->name('show');
+
+    Route::put('{assessment}', [AssessmentController::class, 'update'])
+        ->middleware('permission:assessments.update')
         ->name('update');
 });

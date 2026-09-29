@@ -1,14 +1,28 @@
 <?php
 
+use App\Enums\AdmissionStatus;
+use App\Enums\CatalogStatus;
+use App\Enums\EnrollmentStatus;
 use App\Enums\Role;
 use App\Enums\StaffType;
+use App\Enums\TeacherAssignmentStatus;
 use App\Enums\UserStatus;
 use App\Models\AcademicSession;
+use App\Models\Admission;
+use App\Models\Assessment;
+use App\Models\AssessmentType;
+use App\Models\ClassLevel;
+use App\Models\ClassSubject;
+use App\Models\Enrollment;
 use App\Models\Permission;
 use App\Models\Role as RoleModel;
 use App\Models\School;
+use App\Models\SchoolClass;
+use App\Models\Section;
 use App\Models\Staff;
 use App\Models\Student;
+use App\Models\Subject;
+use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -318,4 +332,407 @@ function pupilWithAccount(?UserStatus $accountStatus = null): Student
     }
 
     return $student->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Admission module helpers (Module 05)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries an academic_session_id, because unlike the pupil
+| roll an admission is meaningless without the intake it targets. A caller that does not
+| care which session is used gets a fresh UPCOMING one created for it, mirroring the way
+| configuredSchool() hands tests a ready-made academic context rather than making every test
+| construct one by hand.
+|
+*/
+
+function admissionCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+        'academic_session_id' => AcademicSession::factory()->create()->id,
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so first_name and academic_session_id
+ * are always present unless a test is deliberately omitting one.
+ */
+function admissionUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'first_name' => 'Amina',
+        'last_name' => 'Yusuf',
+        'academic_session_id' => AcademicSession::factory()->create()->id,
+    ], $overrides);
+}
+
+/**
+ * A pending admission, built through the factory rather than the API so a test about the API
+ * is not also testing record creation.
+ */
+function pendingAdmission(array $attributes = []): Admission
+{
+    $admission = Admission::factory()->create(array_filter([
+        'academic_session_id' => $attributes['academic_session_id'] ?? null,
+        'entry_class_level_id' => $attributes['entry_class_level_id'] ?? null,
+    ], fn (mixed $value): bool => ! is_null($value)));
+
+    $admission->forceFill(collect($attributes)->except(['academic_session_id', 'entry_class_level_id'])->all())->save();
+
+    return $admission->refresh();
+}
+
+/**
+ * An admission that has already been decided and, for ADMITTED, carries the student it
+ * created - built directly rather than through admit(), so a test about admit() is not
+ * circularly dependent on the very method it is testing.
+ */
+function decidedAdmission(AdmissionStatus $status, array $attributes = []): Admission
+{
+    $admission = pendingAdmission($attributes);
+
+    $admission->forceFill(['status' => $status, 'decided_at' => now()]);
+
+    if ($status === AdmissionStatus::ADMITTED) {
+        $admission->student_id = Student::factory()->create([
+            'first_name' => $admission->first_name,
+            'last_name' => $admission->last_name,
+        ])->id;
+    }
+
+    $admission->save();
+
+    return $admission->refresh();
+}
+
+/**
+ * A class level a test can safely target as an entry level: ACTIVE, matching the rule that
+ * only a selectable class level may be applied for.
+ */
+function selectableClassLevel(): ClassLevel
+{
+    return ClassLevel::factory()->create();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Enrollment module helpers (Module 06)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: an ACTIVE student, a
+| non-completed academic session, and a section that genuinely belongs to the class named
+| alongside it. A caller overriding one FK is responsible for the consistency of what it
+| overrides - the same posture admissionCreatePayload() takes for academic_session_id.
+|
+*/
+
+/**
+ * An ACTIVE student, eligible for enrollment. A thin wrapper over the Module 04 helper so a
+ * reader of an enrollment test does not have to know pupil() is where an eligible student
+ * comes from.
+ */
+function eligibleStudent(array $attributes = []): Student
+{
+    return pupil($attributes);
+}
+
+/**
+ * A session that is open for new placements: not COMPLETED. AcademicSession::factory()'s own
+ * default is UPCOMING, so this is a thin, self-documenting alias for it.
+ */
+function eligibleSession(): AcademicSession
+{
+    return AcademicSession::factory()->create();
+}
+
+/**
+ * A section whose whole hierarchy - its class, and that class's class level - is ACTIVE,
+ * matching the rule that a new enrollment may only be made into a fully active hierarchy.
+ * Section::factory()'s own default (and its class and class level factories in turn) is
+ * ACTIVE, so this is a thin, self-documenting alias for it.
+ */
+function activeSection(): Section
+{
+    return Section::factory()->create();
+}
+
+function enrollmentCreatePayload(array $overrides = []): array
+{
+    $section = activeSection();
+    $session = eligibleSession();
+
+    return array_merge([
+        'student_id' => eligibleStudent()->id,
+        'academic_session_id' => $session->id,
+        'school_class_id' => $section->school_class_id,
+        'section_id' => $section->id,
+        'enrollment_date' => $session->start_date->toDateString(),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT touches only these two fields.
+ */
+function enrollmentUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'enrollment_date' => now()->toDateString(),
+        'notes' => null,
+    ], $overrides);
+}
+
+/**
+ * An active enrollment, built through the factory rather than the API so a test about the API
+ * is not also testing record creation.
+ */
+function activeEnrollment(array $attributes = []): Enrollment
+{
+    $enrollment = Enrollment::factory()->create(array_filter([
+        'academic_session_id' => $attributes['academic_session_id'] ?? null,
+        'school_class_id' => $attributes['school_class_id'] ?? null,
+        'section_id' => $attributes['section_id'] ?? null,
+        'student_id' => $attributes['student_id'] ?? null,
+    ], fn (mixed $value): bool => ! is_null($value)));
+
+    $enrollment->forceFill(
+        collect($attributes)->except(['academic_session_id', 'school_class_id', 'section_id', 'student_id'])->all()
+    )->save();
+
+    return $enrollment->refresh();
+}
+
+/**
+ * An enrollment that has already ended (WITHDRAWN or CANCELLED) - built directly rather than
+ * through withdraw()/cancel(), so a test about those methods is not circularly dependent on
+ * the very transition it is testing.
+ */
+function decidedEnrollment(EnrollmentStatus $status, array $attributes = []): Enrollment
+{
+    $enrollment = activeEnrollment($attributes);
+
+    $enrollment->forceFill(['status' => $status, 'status_changed_at' => now()])->save();
+
+    return $enrollment->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Subject module helpers (Module 07)
+|--------------------------------------------------------------------------
+|
+| name and code are generated from Faker's unique() modifier rather than a fixed literal,
+| unlike staffCreatePayload()/studentCreatePayload(): a subject's name and code are globally
+| unique, and a test that calls this helper more than once in a row (deliberately, to assert
+| a duplicate is refused) must not collide with ITSELF before it ever reaches the assertion
+| under test.
+|
+*/
+
+function subjectCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Subject '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and code are always present
+ * unless a test is deliberately omitting one.
+ */
+function subjectUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Subject '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A subject built through the factory rather than the API, so a test about the API is not
+ * also testing record creation.
+ */
+function catalogSubject(array $attributes = []): Subject
+{
+    return Subject::factory()->create($attributes);
+}
+
+/**
+ * A class whose whole hierarchy - the class itself, and its class level - is ACTIVE, matching
+ * the rule that a new class subject may only be offered into a fully active hierarchy. Named
+ * to match selectableClassLevel() above.
+ */
+function selectableSchoolClass(): SchoolClass
+{
+    return SchoolClass::factory()->create();
+}
+
+function classSubjectCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'school_class_id' => selectableSchoolClass()->id,
+        'subject_id' => catalogSubject()->id,
+    ], $overrides);
+}
+
+/**
+ * An active class subject, built through the factory rather than the API.
+ */
+function activeClassSubject(array $attributes = []): ClassSubject
+{
+    return ClassSubject::factory()->create($attributes);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Teacher assignment module helpers (Module 08)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: a TEACHING, actively
+| employed staff member, an active class subject whose whole hierarchy is active, and a
+| non-completed academic session - the same posture enrollmentCreatePayload() and
+| classSubjectCreatePayload() take for their own foreign keys.
+|
+*/
+
+/**
+ * An actively employed TEACHING staff member, eligible to be assigned. A thin wrapper over
+ * the Module 03 helper so a reader of an assignment test does not have to know staffMember()
+ * is where an eligible teacher comes from.
+ */
+function eligibleTeacher(array $staffAttributes = []): Staff
+{
+    return staffMember(StaffType::TEACHING, $staffAttributes);
+}
+
+function assignmentCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'teaching_staff_id' => eligibleTeacher()->id,
+        'class_subject_id' => activeClassSubject()->id,
+        'academic_session_id' => eligibleSession()->id,
+    ], $overrides);
+}
+
+/**
+ * An active teacher assignment, built through the factory rather than the API so a test
+ * about the API is not also testing record creation.
+ */
+function activeAssignment(array $attributes = []): TeacherAssignment
+{
+    return TeacherAssignment::factory()->create($attributes);
+}
+
+/**
+ * An assignment that has already ended (ENDED or CANCELLED) - built directly rather than
+ * through end()/cancel(), so a test about those methods is not circularly dependent on the
+ * very transition it is testing.
+ */
+function decidedAssignment(TeacherAssignmentStatus $status, array $attributes = []): TeacherAssignment
+{
+    $assignment = activeAssignment($attributes);
+
+    $assignment->forceFill(['status' => $status, 'active_marker' => null, 'ended_at' => now()])->save();
+
+    return $assignment->refresh();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Assessment configuration module helpers (Module 09)
+|--------------------------------------------------------------------------
+|
+| A valid create payload always carries fresh, valid references: an active class subject
+| whose whole hierarchy is active, a non-completed term, and an active assessment type - the
+| same posture assignmentCreatePayload() and classSubjectCreatePayload() take for their own
+| foreign keys.
+|
+*/
+
+function assessmentTypeCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Assessment Type '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and code are always present
+ * unless a test is deliberately omitting one.
+ */
+function assessmentTypeUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Assessment Type '.fake()->unique()->numberBetween(1, 1000000),
+        'code' => mb_strtoupper(fake()->unique()->lexify('????')),
+    ], $overrides);
+}
+
+/**
+ * An assessment type built through the factory rather than the API, so a test about the API
+ * is not also testing record creation.
+ */
+function catalogAssessmentType(array $attributes = []): AssessmentType
+{
+    return AssessmentType::factory()->create($attributes);
+}
+
+/**
+ * A term that is open for new assessments: not COMPLETED. Term::factory()'s own default is
+ * UPCOMING, so this is a thin, self-documenting alias for it - matching eligibleSession()'s
+ * identical reasoning for academic sessions.
+ */
+function eligibleTerm(): Term
+{
+    return Term::factory()->create();
+}
+
+function assessmentCreatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'class_subject_id' => activeClassSubject()->id,
+        'term_id' => eligibleTerm()->id,
+        'assessment_type_id' => catalogAssessmentType()->id,
+        'name' => 'CA '.fake()->unique()->numberBetween(1, 1000000),
+        'max_score' => 20,
+    ], $overrides);
+}
+
+/**
+ * A valid amend payload. PUT is a whole-record write, so name and max_score are always
+ * present unless a test is deliberately omitting one.
+ */
+function assessmentUpdatePayload(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'CA '.fake()->unique()->numberBetween(1, 1000000),
+        'max_score' => 20,
+    ], $overrides);
+}
+
+/**
+ * An active, configured assessment, built through the factory rather than the API so a test
+ * about the API is not also testing record creation.
+ */
+function activeAssessment(array $attributes = []): Assessment
+{
+    return Assessment::factory()->create($attributes);
+}
+
+/**
+ * An assessment that has been retired (INACTIVE or ARCHIVED) - built directly rather than
+ * through update(), so a test about the update endpoint is not circularly dependent on the
+ * very transition it is testing.
+ */
+function retiredAssessment(CatalogStatus $status, array $attributes = []): Assessment
+{
+    $assessment = activeAssessment($attributes);
+
+    $assessment->forceFill(['status' => $status])->save();
+
+    return $assessment->refresh();
 }

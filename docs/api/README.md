@@ -9,6 +9,11 @@ permissions, and the client-side checklist.
 | 02 | [school-configuration.md](school-configuration.md) | School profile, academic sessions, terms, academic context, class levels, classes, sections |
 | 03 | [staff-management.md](staff-management.md) | Staff listing and search, creating a staff record with its login account, employment status, terminating an employment |
 | 04 | [student-management.md](student-management.md) | The pupil roll: creating a pupil with no login, derived student numbers, roll status, why a pupil is never deleted |
+| 05 | [admission-management.md](admission-management.md) | Recording and deciding admissions, the `admit`/`reject`/`withdraw` workflow, and how admitting an applicant creates a student |
+| 06 | [enrollment-management.md](enrollment-management.md) | The authoritative academic placement - student, session, class, section - one row per session, and why `students` still has no `current_class_id` |
+| 07 | [subject-management.md](subject-management.md) | The subject catalogue and class-subject offerings - Mathematics vs "JSS 2 teaches Mathematics" - and why neither table has a teacher column |
+| 08 | [teacher-assignment.md](teacher-assignment.md) | Assigning teaching staff to class subjects for a session, the single-active-teacher rule, and reassignment via `end` then `create` |
+| 09 | [assessment-configuration.md](assessment-configuration.md) | The assessment type catalogue and the assessments configured against a class subject and term - CA1/CA2/CA3, max score and weight - and why there is no score, grade or result column yet |
 
 ## Shared across modules
 
@@ -45,10 +50,42 @@ A later module depends on Module 02's academic state, so deploy in this order:
 2. **02** - school profile, academic year, class structure
 3. **03** - staff establishment
 4. **04** - the pupil roll
+5. **05** - admission management
+6. **06** - student enrollment
+7. **07** - subject catalogue and class-subject offerings
+8. **08** - teacher assignment
+9. **09** - assessment configuration
 
 Module 04 depends on Module 01 only. It has no academic dependency, which is the point: a
 pupil exists before they are admitted, placed in a class, or given a portal login, so the roll
 needs nothing from Module 02 in order to be correct.
+
+Module 05 depends on Module 01 (auth), Module 02 (the academic session an admission targets)
+and Module 04 (it creates students through `StudentService`, never a second implementation of
+what a pupil's row looks like) - see
+[admission-management.md](admission-management.md) §0.
+
+Module 06 depends on Module 01, Module 02 (the session, class and section a placement names)
+and Module 04 (the student being placed) - but deliberately **not** on Module 05: an admission
+is never required before enrollment, because Module 04's own `POST /students` remains an
+independent path to a student. See
+[enrollment-management.md](enrollment-management.md) §0.
+
+Module 07 depends on Module 01 and Module 02 (a class subject offers a subject to an existing,
+active class) only - not on Module 04, 05 or 06. A subject exists independently of any student
+ever being enrolled to study it. See
+[subject-management.md](subject-management.md) §0.
+
+Module 08 depends on Module 01, Module 03 (the teaching staff member) and Module 07 (the class
+subject being assigned) - not on Module 04, 05 or 06. Unlike a class subject itself, WHO
+teaches it is session-scoped, so Module 08 also depends on Module 02's academic session. See
+[teacher-assignment.md](teacher-assignment.md) §0.
+
+Module 09 depends on Module 02 (the term an assessment is configured against - the academic
+session is derived through it, never duplicated) and Module 07 (the class subject an assessment
+belongs to) - not on Module 03, 04, 05, 06 or 08. Assessment configuration is independent of who
+teaches a class subject; a future scores module is what will connect the two. See
+[assessment-configuration.md](assessment-configuration.md) §0.
 
 The Super Admin account, the school profile and the development staff and pupil records are
 created by seeders, not by the API: there is no `POST /auth/register` and no `POST /school`,
