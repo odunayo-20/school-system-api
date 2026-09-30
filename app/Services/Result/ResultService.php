@@ -17,6 +17,7 @@ use App\Models\Score;
 use App\Models\TeacherAssignment;
 use App\Models\Term;
 use App\Models\User;
+use App\Notifications\ResultPublishedNotification;
 use App\Services\Grading\GradingService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -297,13 +298,28 @@ class ResultService
      */
     public function publish(Result $result, User $user): Result
     {
-        return $this->transition(
+        $published = $this->transition(
             $result,
             expected: ResultStatus::APPROVED,
             next: ResultStatus::PUBLISHED,
             metadata: ['published_by' => $user->id, 'published_at' => now()],
             verb: 'published',
         );
+
+        // Only when the student this result belongs to already holds a linked portal account
+        // - most pupils in this project have none (see the students migration). self::WITH
+        // already eager-loads enrollment.student.user, so this is free. Fired after the
+        // transition's own transaction has committed: a notification is a side effect of a
+        // state change that has already genuinely happened, not part of the atomic write
+        // itself - unlike AccountCreatedNotification/EnrollmentNotification, where the
+        // notified fact and the row it describes are created together.
+        $student = $published->enrollment->student;
+
+        if ($student->user) {
+            $student->user->notify(new ResultPublishedNotification($published));
+        }
+
+        return $published;
     }
 
     /**

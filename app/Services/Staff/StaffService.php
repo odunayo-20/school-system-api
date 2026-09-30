@@ -9,6 +9,7 @@ use App\Exceptions\BusinessRuleViolation;
 use App\Models\Role;
 use App\Models\Staff;
 use App\Models\User;
+use App\Notifications\AccountCreatedNotification;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -143,6 +144,10 @@ class StaffService
                 'user_id' => $user->getKey(),
                 'status' => EmploymentStatus::ACTIVE,
             ]);
+
+            // Inside the transaction: a notification for an account that failed to save
+            // alongside it would be a stray row pointing at nothing once the rollback runs.
+            $user->notify(new AccountCreatedNotification($user));
 
             return $staff->load('user');
         });
