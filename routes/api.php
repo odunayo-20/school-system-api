@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\Enrollment\EnrollmentController;
 use App\Http\Controllers\Api\V1\Grading\GradingScaleController;
+use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Promotion\PromotionController;
 use App\Http\Controllers\Api\V1\ReportCard\ReportCardController;
 use App\Http\Controllers\Api\V1\Result\ResultController;
@@ -947,4 +948,30 @@ Route::middleware(['auth:api', 'active'])->prefix('attendance')->name('attendanc
     Route::put('{attendance}', [AttendanceController::class, 'update'])
         ->middleware('permission:attendance.update')
         ->name('update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Notifications
+|--------------------------------------------------------------------------
+|
+| A user's own database notifications - the underlying infrastructure a future module can
+| write to via `$user->notify(new SomeNotification(...))` without ever touching this route
+| file or this controller. Today's senders: StaffService::create() (Module 03),
+| EnrollmentService::create() (Module 06) and ResultService::publish() (Module 13) - see each
+| notification class's own docblock for its exact trigger and recipient.
+|
+| Gated on auth:api/active only, matching GET /auth/me - a notification is intrinsically
+| scoped to the account it was sent to, so there is no separate resource-level permission to
+| grant or withhold; NotificationService itself refuses cross-user access.
+|
+| GET /notifications/unread is registered BEFORE POST /notifications/{notification}/read so
+| the literal segment "unread" is never swallowed by the {notification} route parameter.
+*/
+
+Route::middleware(['auth:api', 'active'])->prefix('notifications')->name('notifications.')->group(function (): void {
+    Route::get('/', [NotificationController::class, 'index'])->name('index');
+    Route::get('unread', [NotificationController::class, 'unread'])->name('unread');
+    Route::post('read-all', [NotificationController::class, 'markAllAsRead'])->name('read-all');
+    Route::post('{notification}/read', [NotificationController::class, 'markAsRead'])->name('read');
 });

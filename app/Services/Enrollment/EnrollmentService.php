@@ -8,6 +8,8 @@ use App\Exceptions\BusinessRuleViolation;
 use App\Models\AcademicSession;
 use App\Models\Enrollment;
 use App\Models\SchoolClass;
+use App\Models\Student;
+use App\Notifications\EnrollmentNotification;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -97,6 +99,16 @@ class EnrollmentService
                     'notes' => $attributes['notes'] ?? null,
                     'status' => EnrollmentStatus::ACTIVE,
                 ])->save();
+
+                // Only when this student already holds a linked portal account - most pupils
+                // in this project have none (see the students migration), and there is no one
+                // to notify otherwise. Checked here, inside the transaction, rather than in
+                // EnrollmentNotification itself, so a rollback also discards the notification.
+                $student = Student::query()->find($enrollment->student_id);
+
+                if ($student?->user_id) {
+                    $student->user->notify(new EnrollmentNotification($enrollment));
+                }
 
                 return $enrollment;
             });
