@@ -46,6 +46,7 @@ class AcademicStructureService
     protected function classLevelQuery(array $filters): Builder
     {
         return ClassLevel::query()
+            ->withCount('classes')
             ->when($filters['status'] ?? null, fn (Builder $q, string $status): Builder => $q->where('status', $status))
             // active_only backs the "choose a class level" picker, which must offer only
             // levels a new class can actually be created in.
