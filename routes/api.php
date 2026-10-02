@@ -300,28 +300,6 @@ Route::middleware(['auth:api', 'active'])->group(function (): void {
         ->middleware('permission:class_subjects.update')
         ->name('class-subjects.update');
 
-    /*
-     * Grading Scales (Module 11)
-     */
-    Route::get('grading-scales', [GradingScaleController::class, 'index'])
-        ->middleware('permission:grading_scales.view')
-        ->name('grading-scales.index');
-
-    Route::post('grading-scales', [GradingScaleController::class, 'store'])
-        ->middleware('permission:grading_scales.create')
-        ->name('grading-scales.store');
-
-    Route::get('grading-scales/{gradingScale}', [GradingScaleController::class, 'show'])
-        ->middleware('permission:grading_scales.view')
-        ->name('grading-scales.show');
-
-    Route::match(['put', 'patch'], 'grading-scales/{gradingScale}', [GradingScaleController::class, 'update'])
-        ->middleware('permission:grading_scales.update')
-        ->name('grading-scales.update');
-
-    Route::post('grading-scales/{gradingScale}/calculate', [GradingScaleController::class, 'calculate'])
-        ->middleware('permission:grading_scales.view')
-        ->name('grading-scales.calculate');
 });
 
 /*

@@ -49,7 +49,7 @@ class GradingService
     protected function query(array $filters): Builder
     {
         return GradingScale::query()
-            ->with(['classLevel', 'items'])
+            ->with(['classLevel'])
             ->when($filters['class_level_id'] ?? null, fn (Builder $q, int $id): Builder => $q->where('class_level_id', $id))
             ->when($filters['status'] ?? null, fn (Builder $q, string $status): Builder => $q->where('status', $status))
             ->when($filters['active_only'] ?? false, fn (Builder $q): Builder => $q->selectable())
