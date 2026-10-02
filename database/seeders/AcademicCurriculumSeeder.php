@@ -51,5 +51,79 @@ class AcademicCurriculumSeeder extends Seeder
                 $scale->items()->create($b);
             }
         }
+        // Standard classes and sections
+        $classesByLevel = [
+            2 => [ // Primary
+                ['name' => 'Primary 1', 'code' => 'PRI-1', 'sort_order' => 1],
+                ['name' => 'Primary 2', 'code' => 'PRI-2', 'sort_order' => 2],
+                ['name' => 'Primary 3', 'code' => 'PRI-3', 'sort_order' => 3],
+                ['name' => 'Primary 4', 'code' => 'PRI-4', 'sort_order' => 4],
+                ['name' => 'Primary 5', 'code' => 'PRI-5', 'sort_order' => 5],
+                ['name' => 'Primary 6', 'code' => 'PRI-6', 'sort_order' => 6],
+            ],
+            3 => [ // Junior Secondary
+                ['name' => 'JSS 1', 'code' => 'JSS-1', 'sort_order' => 1],
+                ['name' => 'JSS 2', 'code' => 'JSS-2', 'sort_order' => 2],
+                ['name' => 'JSS 3', 'code' => 'JSS-3', 'sort_order' => 3],
+            ],
+            4 => [ // Senior Secondary
+                ['name' => 'SSS 1', 'code' => 'SSS-1', 'sort_order' => 1],
+                ['name' => 'SSS 2', 'code' => 'SSS-2', 'sort_order' => 2],
+                ['name' => 'SSS 3', 'code' => 'SSS-3', 'sort_order' => 3],
+            ],
+        ];
+
+        foreach ($classesByLevel as $levelId => $classList) {
+            foreach ($classList as $cls) {
+                $classModel = \App\Models\SchoolClass::firstOrCreate(
+                    ['class_level_id' => $levelId, 'name' => $cls['name']],
+                    [
+                        'code' => $cls['code'],
+                        'sort_order' => $cls['sort_order'],
+                        'status' => CatalogStatus::ACTIVE,
+                    ]
+                );
+
+                // Ensure at least 2 sections (arms) exist for every class
+                \App\Models\Section::firstOrCreate(
+                    ['school_class_id' => $classModel->id, 'name' => 'Section A'],
+                    [
+                        'code' => 'A',
+                        'sort_order' => 1,
+                        'status' => CatalogStatus::ACTIVE,
+                    ]
+                );
+
+                \App\Models\Section::firstOrCreate(
+                    ['school_class_id' => $classModel->id, 'name' => 'Section B'],
+                    [
+                        'code' => 'B',
+                        'sort_order' => 2,
+                        'status' => CatalogStatus::ACTIVE,
+                    ]
+                );
+            }
+        }
+
+        // Also ensure any preexisting class has Section A & B
+        foreach (\App\Models\SchoolClass::all() as $existingClass) {
+            \App\Models\Section::firstOrCreate(
+                ['school_class_id' => $existingClass->id, 'name' => 'Section A'],
+                [
+                    'code' => 'A',
+                    'sort_order' => 1,
+                    'status' => CatalogStatus::ACTIVE,
+                ]
+            );
+
+            \App\Models\Section::firstOrCreate(
+                ['school_class_id' => $existingClass->id, 'name' => 'Section B'],
+                [
+                    'code' => 'B',
+                    'sort_order' => 2,
+                    'status' => CatalogStatus::ACTIVE,
+                ]
+            );
+        }
     }
 }
