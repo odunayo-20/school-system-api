@@ -261,45 +261,6 @@ Route::middleware(['auth:api', 'active'])->group(function (): void {
         ->middleware('permission:sections.delete')
         ->name('sections.destroy');
 
-    /*
-     * Subjects & Class Subjects (Module 07)
-     */
-    Route::get('subjects', [SubjectController::class, 'index'])
-        ->middleware('permission:subjects.view')
-        ->name('subjects.index');
-
-    Route::post('subjects', [SubjectController::class, 'store'])
-        ->middleware('permission:subjects.create')
-        ->name('subjects.store');
-
-    Route::get('subjects/{subject}', [SubjectController::class, 'show'])
-        ->middleware('permission:subjects.view')
-        ->name('subjects.show');
-
-    Route::match(['put', 'patch'], 'subjects/{subject}', [SubjectController::class, 'update'])
-        ->middleware('permission:subjects.update')
-        ->name('subjects.update');
-
-    Route::delete('subjects/{subject}', [SubjectController::class, 'destroy'])
-        ->middleware('permission:subjects.delete')
-        ->name('subjects.destroy');
-
-    Route::get('class-subjects', [ClassSubjectController::class, 'index'])
-        ->middleware('permission:class_subjects.view')
-        ->name('class-subjects.index');
-
-    Route::post('class-subjects', [ClassSubjectController::class, 'store'])
-        ->middleware('permission:class_subjects.create')
-        ->name('class-subjects.store');
-
-    Route::get('class-subjects/{classSubject}', [ClassSubjectController::class, 'show'])
-        ->middleware('permission:class_subjects.view')
-        ->name('class-subjects.show');
-
-    Route::match(['put', 'patch'], 'class-subjects/{classSubject}', [ClassSubjectController::class, 'update'])
-        ->middleware('permission:class_subjects.update')
-        ->name('class-subjects.update');
-
 });
 
 /*
