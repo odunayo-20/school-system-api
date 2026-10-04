@@ -27,6 +27,17 @@ class AcademicCurriculumSeeder extends Seeder
             Subject::firstOrCreate(['code' => $s['code']], $s);
         }
 
+        $assessmentTypes = [
+            ['name' => 'Continuous Assessment', 'code' => 'CA', 'sort_order' => 1, 'status' => CatalogStatus::ACTIVE],
+            ['name' => 'Class Test', 'code' => 'TEST', 'sort_order' => 2, 'status' => CatalogStatus::ACTIVE],
+            ['name' => 'Terminal Examination', 'code' => 'EXAM', 'sort_order' => 3, 'status' => CatalogStatus::ACTIVE],
+            ['name' => 'Project Assignment', 'code' => 'PRJ', 'sort_order' => 4, 'status' => CatalogStatus::ACTIVE],
+        ];
+
+        foreach ($assessmentTypes as $at) {
+            \App\Models\AssessmentType::firstOrCreate(['code' => $at['code']], $at);
+        }
+
         $scale = GradingScale::firstOrCreate(
             ['code' => 'STD-SCALE'],
             [
